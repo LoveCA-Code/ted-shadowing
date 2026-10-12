@@ -33,7 +33,7 @@ let unit = UNITS[0];
 let showKo = true;
 let showVideo = false;
 let hideEn = false;      // F4 영어 가리기 (듣기 모드)
-let revealedCi = -1;    // 가린 상태에서 눌러서 영어를 보이게 한 구간
+let peeking = false;    // 가린 구간을 누르고 있는 동안 영어를 보여 주는 중
 let target = null;      // 지금 재생 중인 구간 {s, e, ci}
 let stopTimer = 0;
 const attached = new WeakMap();
@@ -256,14 +256,19 @@ list.addEventListener('click', (ev) => {
   const b = ev.target.closest('.sent');
   if (!b) return;
   const k = chunkOf(+b.dataset.i);
-  // 영어를 가린 상태에서 지금 구간을 누르면 먼저 영어를 보여 준다 (재생은 다시 누를 때)
-  if (hideEn && k === ci && revealedCi !== ci) {
-    revealedCi = ci;
-    list.classList.add('reveal');
-    return;
-  }
+  if (hideEn && k === ci) return;   // 가린 구간은 누르는 동안 보기만 (재생은 큰 버튼)
   play(k);
 });
+// 영어를 가린 상태에서 지금 구간을 누르고 있는 동안만 영어를 보여 주고, 손을 떼면 다시 가린다
+list.addEventListener('pointerdown', (ev) => {
+  const b = ev.target.closest('.sent');
+  if (!hideEn || !b || chunkOf(+b.dataset.i) !== ci) return;
+  peeking = true;
+  list.classList.add('reveal');
+});
+const endPeek = () => { if (peeking) { peeking = false; list.classList.remove('reveal'); } };
+for (const type of ['pointerup', 'pointercancel', 'pointerleave']) list.addEventListener(type, endPeek);
+list.addEventListener('contextmenu', (ev) => { if (hideEn) ev.preventDefault(); });
 
 let marked = null;      // 표시 중인 구간 {a, b}
 function mark(instant) {
@@ -285,7 +290,6 @@ function mark(instant) {
   gaps.forEach((g) => { const i = +g.dataset.before; if (i > c.a && i < c.b) g.classList.add('in'); });
   marked = c;
   list.classList.toggle('big', !!unit.big);
-  list.classList.toggle('reveal', revealedCi === ci);
   $('counter').textContent = `처음부터 듣기 · ${ci + 1} / ${chunks.length}`;
   prepareWords();
   said = -1;
@@ -341,8 +345,7 @@ $('units').addEventListener('click', (ev) => {
 });
 $('hideT').addEventListener('click', () => {
   hideEn = !hideEn;
-  revealedCi = -1;
-  list.classList.remove('reveal');
+  endPeek();
   applyToggles(); save();
 });
 $('sheet').addEventListener('click', (ev) => { if (ev.target === $('sheet')) $('sheet').hidden = true; });
