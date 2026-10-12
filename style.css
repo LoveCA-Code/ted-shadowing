@@ -52,7 +52,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .list {
   position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px;
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column;
   overscroll-behavior: contain;
   -webkit-mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent);
           mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent);
@@ -60,12 +60,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* 처음·마지막 문장도 가운데로 올 수 있게 위아래 여백. 패딩 대신 빈 칸을 써야 영상이 켜져도 목록이 줄어든다 */
 .list::before, .list::after { content: ""; flex-shrink: 0; height: 45%; }
 .sent {
-  flex-shrink: 0; display: block; text-align: left; padding: 10px 12px; border-radius: 10px; width: 100%;
+  flex-shrink: 0; display: block; text-align: left; padding: 10px 12px; border-radius: 10px; width: 100%; margin: 2px 0;
   font-family: var(--font-en); font-size: 17px; line-height: 1.5; color: var(--muted);
   opacity: .32; transition: opacity .2s, font-size .2s;
 }
 .sent.near { opacity: .55; }
-.sent.on { opacity: 1; font-size: 22px; color: var(--fg); background: var(--accent-soft); }
+/* 구간 = 한 박스: 이어진 문장들의 배경을 붙이고 처음·끝만 둥글게 */
+.sent.on { opacity: 1; font-size: 19px; color: var(--fg); background: var(--accent-soft); margin: 0; border-radius: 0; }
+.sent.on.first { border-radius: 10px 10px 0 0; margin-top: 2px; }
+.sent.on.last { border-radius: 0 0 10px 10px; margin-bottom: 2px; }
+.sent.on.first.last { border-radius: 10px; }
+.list.big .sent.on { font-size: 22px; }
+.para-gap.in { background: var(--accent-soft); }
 /* 말한 단어는 강조색으로 바뀐다 */
 .sent.on .w { transition: color .08s; }
 .sent.on .w.said { color: var(--accent); }
@@ -99,9 +105,13 @@ body.no-ko .ko { display: none !important; }
   width: 100%; max-height: 80vh; overflow-y: auto; background: var(--surface); border-radius: 16px 16px 0 0;
   padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 0px));
 }
-.sheet-head { display: flex; justify-content: space-between; align-items: center; }
-.sheet-label { margin: 16px 0 6px; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
-.log { margin: 0; padding-left: 20px; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; }
-.stats { margin: 0; font-family: var(--font-mono); font-size: 12px; }
+.sheet-label { margin: 0 0 10px; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+.units { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+.unit {
+  height: 52px; border-radius: 12px; border: 1px solid var(--faint); background: var(--surface);
+  font-size: 15px; font-weight: 500;
+}
+.unit[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.unit-btn { min-width: 52px; }
 
 @media (prefers-reduced-motion: reduce) { .sent { transition: none; } }
