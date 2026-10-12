@@ -1,62 +1,9 @@
-# TED Shadowing
+# Shadowing
 
-TED 강연을 **문장 단위로 듣고 → 멈추고 → 따라 말하는** 쉐도잉 웹앱입니다. 아이폰 홈 화면에 추가해서 앱처럼 씁니다.
-단어나 표현을 탭하면 단어장에 모이고, 안키처럼 간격 반복으로 복습합니다.
+아이폰용 TED 강연 쉐도잉 앱 (개인용 PWA). https://loveca-code.github.io/ted-shadowing/
 
-## 구조
+- 버튼을 누르면 현재 문장을 처음부터 재생하고, 문장 끝에서 멈춥니다.
+- 소리·영상은 TED 서버에서 바로 재생합니다. 강연 데이터(`talks/`)는 문장별 시간·한국어·섹션·연결 표현을 담고 있습니다.
+- 강연 데이터는 별도 도구(Tools/English/프로그램/콘텐츠준비.py)로 만들고 `앱에넣기.py`로 넣습니다.
 
-```
-index.html / style.css / app.js   웹앱 (빌드 과정 없음)
-sw.js, manifest.webmanifest       홈 화면 앱(PWA) 설정
-talks/index.json                  강연 목록
-talks/<영상ID>.json               문장 구간 + 한국어 해석
-tools/add_talk.py                 유튜브 자막 → 구간 JSON 변환 스크립트
-```
-
-## 강연 추가하기 (PC)
-
-```bash
-pip install -r requirements.txt                          # 처음 한 번
-python tools/add_talk.py <유튜브 주소> -c 마케팅·브랜딩      # 한 개
-python tools/add_talk.py --list tools/talks.txt          # 목록 파일로 한 번에
-```
-
-- 자막을 문장으로 나누고, **문단·섹션은 자동 추정**합니다 (멈춤 길이, (Laughter)/(Applause), "So / Now / First…" 같은 전환 표현 기준).
-- TED 공식 채널 영상은 사람이 만든 영어·한국어 자막이 있어 정확합니다. TEDx는 자동 자막이라 문장 구분이 덜 정확할 수 있습니다.
-- 요청을 짧은 시간에 많이 보내면 유튜브가 잠시(몇 시간) 막을 수 있습니다.
-
-## 로컬에서 실행
-
-```bash
-python -m http.server 8765
-```
-→ http://localhost:8765
-
-## 아이폰에서 쓰기 (GitHub Pages)
-
-1. GitHub에 저장소를 만들고 이 폴더를 push합니다.
-2. 저장소 Settings → Pages → Branch: `main` / `(root)` → Save
-3. 아이폰 Safari에서 `https://<아이디>.github.io/<저장소>/`를 엽니다.
-4. 공유 버튼 → **홈 화면에 추가**
-
-## 사용법
-
-| 조작 | 동작 |
-|---|---|
-| ▶ 처음부터 | 현재 구간을 **누를 때마다 처음부터** 재생하고, 구간 끝에서 멈춤 |
-| ⏮ / ⏭ | 이전 / 다음 구간으로 가서 재생 |
-| ⏹ | 정지 |
-| 구간 탭 | 그 구간을 처음부터 재생 |
-| 단어 **길게 누르기** | 단어 저장 창 → "앞/뒷 단어 포함"으로 숙어 선택 → 뜻 메모 → 저장 |
-| 묶음 단위 | 문장 1·2·3·4개 / 문단 ¼·⅓·½·1 / 섹션 — 바꿔도 지금 위치는 유지 |
-| 영어 가림 / 해석 | 텍스트 흐리게(탭하면 보임) / 한국어 해석 보이기 |
-
-- 재생 중에는 지금 말하는 문장이 강조됩니다.
-- 영상 화면을 직접 눌러 재생하면 연속 재생이 되고, 현재 구간이 자동으로 따라갑니다.
-- 아이폰에서는 처음 한 번 영상 화면을 직접 탭해야 재생될 수 있습니다.
-
-## 데이터 저장
-
-단어장과 진행 상황은 **기기 안(localStorage)에만** 저장됩니다.
-- Safari와 홈 화면 앱은 저장소가 따로라서, 홈 화면 앱으로만 쓰는 것을 권장합니다.
-- 단어장 탭 → **내보내기**로 가끔 백업 파일을 저장해 두세요. 다른 기기에서는 **가져오기**로 합칠 수 있습니다.
+Transcripts and translations © TED Conferences LLC, used under CC BY–NC–ND 4.0 for personal, non-commercial study.

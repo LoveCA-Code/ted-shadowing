@@ -1,881 +1,262 @@
-'use strict';
+// Shadowing — F2 구간 재생
+// 누르면 현재 구간을 처음부터 재생하고 구간 끝에서 멈춘다. 자동 반복·대기·자동 다음 없음.
+// 소리·영상은 TED 서버(HLS)에서 바로 재생. 문장 시간(s, e)은 그 스트림의 처음(인트로 포함)부터의 초.
 
-/* =========================================================
-   TED Shadowing — 구간 반복 따라하기 + 단어장(SRS)
-   ========================================================= */
+const $ = (id) => document.getElementById(id);
+const audio = $('audio');
+const video = $('video');
+const list = $('list');
 
-const $ = (s, el = document) => el.querySelector(s);
-const $$ = (s, el = document) => [...el.querySelectorAll(s)];
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const app = $('#app');
-const ICONS = {
-  prev: '<path d="M19 20 9 12l10-8v16Z"/><path d="M5 19V5"/>',
-  next: '<path d="m5 4 10 8-10 8V4Z"/><path d="M19 5v14"/>',
-  play: '<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.4-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/>',
-  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
-  back: '<path d="m15 18-6-6 6-6"/>',
-  sound: '<path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>',
-  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
-};
-const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
-const DAY = 86400000;
+const STORE = 'shadowing.v2';
+const HLS_JS = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';  // 사파리가 아닌 브라우저(PC 확인용)
+// 아이폰·사파리만 기본 재생기를 쓴다 (크롬은 '재생 가능'이라 답하고도 TED 스트림을 못 여는 경우가 있음)
+const isApple = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+  (/Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|Android|Edg\//.test(navigator.userAgent));
+const nativeHls = isApple && audio.canPlayType('application/vnd.apple.mpegurl') !== '';
 
-/* ---------------- 저장소 ---------------- */
-const KEY = 'shadowing.v1';
-const DEFAULT_SETTINGS = { unit: 's1', rate: 1, hideEn: false, showKo: false };
-const store = (() => {
-  let s = {};
-  try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch {}
-  return {
-    cards: s.cards || [],
-    progress: s.progress || {},
-    settings: { ...DEFAULT_SETTINGS, ...(s.settings || {}) },
-  };
-})();
+let talk = null;
+let S = [];
+let cur = 0;
+let showKo = true;
+let showVideo = false;
+let target = null;      // 지금 재생 중인 구간 {s, e}
+let stopTimer = 0;
+const attached = new WeakMap();
+const signals = [];
+const stops = [];
+
+// ---------- 저장 ----------
+function load() {
+  try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) { return {}; }
+}
 function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(store)); }
-  catch { toast('저장 공간이 부족합니다. 백업을 내보내 주세요.'); }
-  updateBadge();
-}
-navigator.storage?.persist?.().catch(() => {});
-
-function progressOf(id) {
-  return (store.progress[id] ||= { last: 0 });
-}
-
-/* ---------------- 공통 UI ---------------- */
-let toastTimer;
-function toast(msg, ms = 2200) {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), ms);
+  try {
+    const st = load();
+    st.showKo = showKo;
+    st.showVideo = showVideo;
+    st.talk = talk && talk.id;
+    st.pos = Object.assign(st.pos || {}, talk ? { [talk.id]: cur } : {});
+    localStorage.setItem(STORE, JSON.stringify(st));
+  } catch (e) {}
 }
 
-function openSheet(html) {
-  const sh = $('#sheet');
-  sh.innerHTML = '<div class="grab"></div>' + html;
-  sh.hidden = false;
-  $('#sheet-backdrop').hidden = false;
-  sh.scrollTop = 0;
-  return sh;
-}
-function closeSheet() {
-  $('#sheet').hidden = true;
-  $('#sheet-backdrop').hidden = true;
-}
-$('#sheet-backdrop').addEventListener('click', closeSheet);
-
-function speak(text) {
-  if (!('speechSynthesis' in window)) return;
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'en-US';
-  u.rate = 0.9;
-  speechSynthesis.speak(u);
-}
-
-function fmtTime(sec) {
-  sec = Math.max(0, Math.round(sec));
-  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
-}
-function fmtIvl(ms) {
-  const m = ms / 60000;
-  if (m < 60) return `${Math.max(1, Math.round(m))}분`;
-  if (m < 1380) return `${Math.round(m / 60)}시간`;
-  const d = m / 1440;
-  if (d < 30) return `${Math.round(d)}일`;
-  if (d < 365) return `${Math.round(d / 30)}개월`;
-  return `${(d / 365).toFixed(1)}년`;
-}
-
-/* ---------------- YouTube ---------------- */
-let ytApi;
-function loadYT() {
-  return (ytApi ||= new Promise((resolve) => {
-    if (window.YT?.Player) return resolve(window.YT);
-    window.onYouTubeIframeAPIReady = () => resolve(window.YT);
-    const s = document.createElement('script');
-    s.src = 'https://www.youtube.com/iframe_api';
-    document.head.append(s);
-  }));
-}
-async function makePlayer(el, videoId, { onState, vars = {} } = {}) {
-  const YT = await loadYT();
-  const playerVars = { playsinline: 1, rel: 0, modestbranding: 1, iv_load_policy: 3, cc_load_policy: 0, ...vars };
-  if (location.protocol.startsWith('http')) playerVars.origin = location.origin;
-  return new Promise((resolve) => {
-    const p = new YT.Player(el, {
-      videoId, width: '100%', height: '100%', playerVars,
-      events: { onReady: () => resolve(p), onStateChange: (e) => onState?.(e.data) },
+// ---------- 스트림 연결 ----------
+let hlsLoading = null;
+function loadHlsJs() {
+  if (!hlsLoading) {
+    hlsLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = HLS_JS; s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
     });
-  });
-}
-const YS = { ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 };
-
-/* 아이폰에서는 첫 재생이 막히는 경우가 있어 안내 */
-function watchFirstPlay(player) {
-  setTimeout(() => {
-    try {
-      const st = player.getPlayerState();
-      if (st !== YS.PLAYING && st !== YS.BUFFERING && st !== YS.PAUSED) toast('재생이 안 되면 영상을 한 번 직접 탭해 주세요', 3500);
-    } catch {}
-  }, 1800);
-}
-
-/* ---------------- 단어 토큰화 ---------------- */
-const WORD_RE = /[A-Za-z0-9][A-Za-z0-9'’\-]*/g;
-function tokenize(text) {
-  const parts = [];
-  let last = 0, m;
-  WORD_RE.lastIndex = 0;
-  while ((m = WORD_RE.exec(text))) {
-    if (m.index > last) parts.push({ t: text.slice(last, m.index) });
-    parts.push({ t: m[0], w: true });
-    last = m.index + m[0].length;
   }
-  if (last < text.length) parts.push({ t: text.slice(last) });
-  let i = 0;
-  for (const p of parts) if (p.w) p.i = i++;
-  return parts;
+  return hlsLoading;
 }
-function wordsOf(text) { return text.match(WORD_RE) || []; }
-const norm = (s) => s.toLowerCase().replace(/’/g, "'").trim();
-
-function highlightCtx(ctx, range) {
-  if (!range) return esc(ctx);
-  return tokenize(ctx).map((p) => (p.w && p.i >= range[0] && p.i <= range[1] ? `<mark>${esc(p.t)}</mark>` : esc(p.t))).join('')
-    .replace(/<\/mark>(\s+)<mark>/g, '$1');
+async function attach(el, url) {
+  if (attached.get(el) === url) return;
+  attached.set(el, url);
+  if (nativeHls) { el.src = url; el.preload = 'auto'; return; }
+  await loadHlsJs();
+  const hls = new window.Hls();
+  hls.loadSource(url);
+  hls.attachMedia(el);
 }
+const media = () => (showVideo ? video : audio);
+function mediaUrl() { return showVideo ? talk.video.hls : talk.audio.hls; }
 
-/* ---------------- 사전 ---------------- */
-const dictCache = new Map();
-async function lookup(term) {
-  const key = norm(term);
-  if (dictCache.has(key)) return dictCache.get(key);
-  const getJSON = (url) => fetch(url, { signal: AbortSignal.timeout?.(7000) })
-    .then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const strip = (html) => {
-    const d = document.createElement('div');
-    d.innerHTML = html;
-    return d.textContent.trim();
-  };
-  // 뜻: 위키낱말사전(구/숙어도 지원), 발음기호: dictionaryapi.dev
-  const [wk, da] = await Promise.all([
-    getJSON('https://en.wiktionary.org/api/rest_v1/page/definition/' + encodeURIComponent(key.replace(/ /g, '_'))),
-    getJSON('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(key)),
-  ]);
-  const defs = [];
-  for (const e of wk?.en || []) {
-    for (const d of e.definitions || []) {
-      const def = strip(d.definition || '');
-      if (def && defs.length < 4) { defs.push({ pos: e.partOfSpeech.toLowerCase(), def }); break; }
-    }
-  }
-  if (!defs.length && Array.isArray(da)) {
-    for (const m of da.flatMap((d) => d.meanings).slice(0, 4)) defs.push({ pos: m.partOfSpeech, def: m.definitions[0]?.definition || '' });
-  }
-  const phon = Array.isArray(da) ? da[0].phonetic || da[0].phonetics?.find((p) => p.text)?.text || '' : '';
-  const out = defs.length || phon ? { phon, defs } : null;
-  if (out) dictCache.set(key, out);
-  return out;
+// ---------- 재생 ----------
+async function play(i) {
+  if (!S.length) return;
+  cur = Math.max(0, Math.min(S.length - 1, i));
+  save();
+  mark();
+  const m = media();
+  (m === audio ? video : audio).pause();
+  await attach(m, mediaUrl());
+  const x = S[cur];
+  target = { s: x.s, e: x.e, i: cur };
+  clearTimeout(stopTimer);
+  m.currentTime = x.s;
+  setMetadata();
+  try { await m.play(); } catch (e) { toast('재생할 수 없습니다. 다시 눌러 주세요.'); return; }
+  watch();
 }
 
-/* ---------------- 간격 반복(SRS, SM-2 단순화) ---------------- */
-function schedule(c, g, now = Date.now()) {
-  // g: 0 다시, 1 어려움, 2 알맞음, 3 쉬움
-  let { ivl = 0, ease = 2.5, reps = 0, lapses = 0 } = c;
-  let due;
-  if (g === 0) { ease = Math.max(1.3, ease - 0.2); lapses += ivl > 0 ? 1 : 0; ivl = 0; reps = 0; due = now + 60e3; }
-  else if (g === 1) {
-    ease = Math.max(1.3, ease - 0.15);
-    if (ivl < 1) due = now + 10 * 60e3;
-    else { ivl = Math.max(1, Math.round(ivl * 1.2)); due = now + ivl * DAY; }
-    reps++;
-  } else if (g === 2) {
-    ivl = ivl < 1 ? 1 : ivl < 3 ? 3 : Math.round(ivl * ease);
-    due = now + ivl * DAY; reps++;
-  } else {
-    ease += 0.15;
-    ivl = ivl < 1 ? 4 : Math.round(ivl * ease * 1.3);
-    due = now + ivl * DAY; reps++;
-  }
-  return { ivl, ease, reps, lapses, due };
-}
-function dueCards(ahead = 0) {
-  const t = Date.now() + ahead;
-  return store.cards.filter((c) => c.due <= t).sort((a, b) => a.due - b.due);
-}
-function updateBadge() {
-  const n = dueCards().length;
-  const b = $('#due-badge');
-  b.hidden = n === 0;
-  b.textContent = n > 99 ? '99+' : n;
-}
-function findCard(text) {
-  const k = norm(text);
-  return store.cards.find((c) => norm(c.text) === k);
-}
-
-/* ---------------- 라우터 ---------------- */
-let cleanup = null;
-async function route() {
-  cleanup?.();
-  cleanup = null;
-  closeSheet();
-  document.body.className = '';
-  const [, view, arg] = (location.hash.slice(1).split('?')[0] || '/').split('/');
-  $$('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.tab === (view || 'library')));
-  window.scrollTo(0, 0);
-  try {
-    if (view === 'talk') await viewTalk(decodeURIComponent(arg));
-    else if (view === 'vocab') viewVocab();
-    else if (view === 'review') viewReview();
-    else await viewLibrary();
-  } catch (e) {
-    console.error(e);
-    app.innerHTML = `<div class="empty">불러오지 못했습니다.<br><small>${esc(e.message)}</small></div>`;
-  }
-}
-window.addEventListener('hashchange', route);
-
-/* =========================================================
-   강연 목록
-   ========================================================= */
-async function viewLibrary() {
-  app.innerHTML = '<h1>TED Shadowing</h1><p class="sub">구간을 듣고, 멈추고, 따라 말하기.</p><div class="chips cat-chips" id="cats"></div><div id="list"></div>';
-  let talks = [];
-  try {
-    const r = await fetch('talks/index.json', { cache: 'no-cache' });
-    if (r.ok) talks = await r.json();
-  } catch {}
-  const list = $('#list');
-  if (!talks.length) {
-    list.innerHTML = `<div class="empty">강연을 준비 중입니다.<br><small>곧 마케팅 TED 강연이 추가됩니다.</small></div>`;
+// 구간 끝을 지키는 감시: 남은 시간의 절반씩 기다렸다 확인 (화면이 꺼져도 동작하도록 타이머 사용)
+function watch() {
+  clearTimeout(stopTimer);
+  if (!target) return;
+  const m = media();
+  if (m.seeking || m.currentTime < target.s - 0.25) { stopTimer = setTimeout(watch, 30); return; }
+  const left = target.e - m.currentTime;
+  if (left <= 0.012) {
+    m.pause();
+    recordStop(m.currentTime - target.e);
+    target = null;
+    progress(1);
     return;
   }
-  const cats = [...new Set(talks.map((t) => t.category || '기타'))];
-  let cur = store.settings.libCat && cats.includes(store.settings.libCat) ? store.settings.libCat : '전체';
+  stopTimer = setTimeout(watch, Math.max(8, Math.min(250, (left * 1000) / 2 / (m.playbackRate || 1))));
+}
+for (const m of [audio, video]) {
+  m.addEventListener('timeupdate', () => { if (m === media() && target) watch(); });
+}
 
-  const draw = () => {
-    $('#cats').innerHTML = ['전체', ...cats].map((c) => `<button class="chip${c === cur ? ' on' : ''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
-    const shown = cats.filter((c) => cur === '전체' || c === cur);
-    list.innerHTML = shown.map((c) => `
-      <h2>${esc(c)}</h2>
-      ${talks.filter((t) => (t.category || '기타') === c).map((t) => {
-        const p = store.progress[t.id];
-        const pct = p ? Math.round(((p.last + 1) / t.sentences) * 100) : 0;
-        return `<a class="talk-item card" href="#/talk/${encodeURIComponent(t.id)}">
-          <img src="https://i.ytimg.com/vi/${esc(t.id)}/mqdefault.jpg" alt="" loading="lazy">
-          <div class="meta">
-            <div class="t">${esc(t.title)}</div>
-            <div class="s">${fmtTime(t.duration)} · 섹션 ${t.sections} · 문단 ${t.paragraphs} · 문장 ${t.sentences}</div>
-            <div class="bar"><i style="width:${pct}%"></i></div>
-          </div></a>`;
-      }).join('')}`).join('');
-  };
-  draw();
-  $('#cats').addEventListener('click', (e) => {
-    const c = e.target.closest('[data-c]');
-    if (!c) return;
-    cur = c.dataset.c;
-    store.settings.libCat = cur;
-    save();
-    draw();
+// 진행 표시: 지금 문장 박스가 왼쪽부터 차오름
+function frame() {
+  if (target && !document.hidden) {
+    const m = media();
+    const p = (m.currentTime - target.s) / (target.e - target.s);
+    progress(Math.min(1, Math.max(0, p)));
+  }
+  requestAnimationFrame(frame);
+}
+function progress(p) {
+  const on = list.querySelector('.sent.on');
+  if (on) on.style.setProperty('--p', (p * 100).toFixed(1) + '%');
+  const x = S[cur];
+  if (x) $('clock').textContent = `${(p * (x.e - x.s)).toFixed(1)} / ${(x.e - x.s).toFixed(1)}초`;
+}
+
+// ---------- 화면 ----------
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function build() {
+  const paras = new Set(talk.paragraphs);
+  let html = '';
+  S.forEach((x, i) => {
+    if (i && paras.has(i)) html += '<div class="para-gap"></div>';
+    html += `<button type="button" class="sent" data-i="${i}">${esc(x.t)}<span class="ko">${esc(x.ko || '')}</span></button>`;
+  });
+  list.innerHTML = html;
+  $('talkTitle').textContent = talk.title;
+  $('talkSub').textContent = [talk.speaker, talk.title_ko].filter(Boolean).join(' · ');
+}
+list.addEventListener('click', (ev) => {
+  const b = ev.target.closest('.sent');
+  if (b) play(+b.dataset.i);
+});
+
+let prevOn = null;
+function mark(instant) {
+  const items = list.querySelectorAll('.sent');
+  if (prevOn !== null) {
+    for (const k of [prevOn - 1, prevOn, prevOn + 1]) if (items[k]) { items[k].classList.remove('on', 'near'); items[k].style.removeProperty('--p'); }
+  }
+  if (items[cur - 1]) items[cur - 1].classList.add('near');
+  if (items[cur + 1]) items[cur + 1].classList.add('near');
+  const on = items[cur];
+  on.classList.add('on');
+  prevOn = cur;
+  $('counter').textContent = `처음부터 듣기 · ${cur + 1} / ${S.length}`;
+  progress(0);
+  // 스크립트 목록 안에서만 스크롤 (화면 전체가 밀리지 않게)
+  requestAnimationFrame(() => {
+    const top = on.offsetTop - list.clientHeight / 2 + on.offsetHeight / 2;
+    const smooth = !instant && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    list.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' });
   });
 }
 
-/* =========================================================
-   강연 — 구간 재생 (누를 때마다 처음부터, 끝나면 멈춤)
-   ========================================================= */
-const UNITS = [
-  { k: 's1', label: '1문장', group: '문장' }, { k: 's2', label: '2문장' }, { k: 's3', label: '3문장' }, { k: 's4', label: '4문장' },
-  { k: 'p4', label: '¼문단', group: '문단' }, { k: 'p3', label: '⅓문단' }, { k: 'p2', label: '½문단' }, { k: 'p1', label: '1문단' },
-  { k: 'sec', label: '섹션', group: '' },
-];
-
-/* 문장/문단/섹션 경계로부터 재생 묶음 [a, b) 목록을 만든다 */
-function buildGroups(talk, unit) {
-  const S = talk.sentences;
-  const P = [...talk.paragraphs, S.length];
-  const X = [...talk.sections, talk.paragraphs.length];
-  const groups = [];
-  const secOfPara = [];
-  for (let x = 0; x < X.length - 1; x++) for (let p = X[x]; p < X[x + 1]; p++) secOfPara[p] = x;
-
-  if (unit === 'sec') {
-    for (let x = 0; x < X.length - 1; x++) groups.push({ a: P[X[x]], b: P[X[x + 1]], sec: x, para: X[x] });
-    return groups;
+function applyToggles() {
+  document.body.classList.toggle('no-ko', !showKo);
+  $('koT').setAttribute('aria-pressed', String(showKo));
+  $('videoT').setAttribute('aria-pressed', String(showVideo));
+  $('videoBox').hidden = !showVideo;
+}
+$('koT').addEventListener('click', () => { showKo = !showKo; applyToggles(); save(); mark(true); });
+$('videoT').addEventListener('click', async () => {
+  audio.pause(); video.pause(); target = null; clearTimeout(stopTimer);
+  showVideo = !showVideo;
+  applyToggles(); save(); mark(true);
+  if (showVideo) {  // 영상을 켜면 지금 문장의 첫 장면을 보여 준다
+    await attach(video, talk.video.hls);
+    video.currentTime = S[cur].s;
   }
-  for (let p = 0; p < P.length - 1; p++) {
-    const pa = P[p], pb = P[p + 1];
-    const base = { sec: secOfPara[p], para: p };
-    if (unit[0] === 's') {
-      const n = +unit.slice(1);
-      for (let a = pa; a < pb; a += n) groups.push({ ...base, a, b: Math.min(pb, a + n) });
-    } else {
-      // 문단을 k 등분: 시간 길이가 고르게 되도록 문장 경계에서 자름
-      const k = Math.min(+unit.slice(1), pb - pa);
-      const t0 = S[pa].s, total = S[pb - 1].e - t0;
-      const cuts = [pa];
-      for (let j = 1; j < k; j++) {
-        const target = t0 + (total * j) / k;
-        let best = null;
-        for (let i = cuts[cuts.length - 1] + 1; i <= pb - (k - j); i++) {
-          if (best === null || Math.abs(S[i].s - target) < Math.abs(S[best].s - target)) best = i;
-        }
-        cuts.push(best);
-      }
-      cuts.push(pb);
-      for (let j = 0; j < cuts.length - 1; j++) groups.push({ ...base, a: cuts[j], b: cuts[j + 1] });
-    }
-  }
-  return groups;
+});
+$('play').addEventListener('click', () => play(cur));
+$('prev').addEventListener('click', () => play(cur - 1));
+$('next').addEventListener('click', () => play(cur + 1));
+
+// ---------- 이어폰·잠금화면 ----------
+function setMetadata() {
+  if (!('mediaSession' in navigator) || !window.MediaMetadata) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: S[cur].t, artist: `${talk.speaker} · ${cur + 1}/${S.length}`, album: talk.title,
+    artwork: [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }],
+  });
+}
+if ('mediaSession' in navigator) {
+  const on = (action, fn) => {
+    try {
+      navigator.mediaSession.setActionHandler(action, () => { signal(action); fn(); });
+    } catch (e) {}
+  };
+  on('play', () => play(cur));            // 한 번 누르기 = 현재 구간 처음부터
+  on('pause', () => play(cur));           // 재생 중에 눌러도 처음부터 (정지 버튼 없음)
+  on('nexttrack', () => play(cur + 1));
+  on('previoustrack', () => play(cur - 1));
+  on('seekforward', () => play(cur + 1));
+  on('seekbackward', () => play(cur - 1));
 }
 
-async function viewTalk(id) {
-  document.body.classList.add('in-talk');
-  app.innerHTML = '<div class="empty">불러오는 중…</div>';
-  const r = await fetch(`talks/${encodeURIComponent(id)}.json`, { cache: 'no-cache' });
-  if (!r.ok) throw new Error('강연 파일을 찾을 수 없습니다: ' + id);
-  const talk = await r.json();
-  const S = talk.sentences;
-  const set = store.settings;
-  if (!UNITS.some((u) => u.k === set.unit)) set.unit = 's1';
-  const prog = progressOf(id);
-
-  const st = {
-    groups: [], g: 0,
-    mode: 'idle', // idle | seg | free
-    stopAt: 0, speaking: -1,
-    player: null, timer: 0, wake: null, alive: true,
-  };
-
-  const savedSingles = () => new Set(store.cards.map((c) => norm(c.text)).filter((t) => !t.includes(' ')));
-  const savedRanges = (k) => store.cards.filter((c) => c.talkId === id && c.sent === k && c.range).map((c) => c.range);
-
-  function sentHtml(k, singles) {
-    const ranges = savedRanges(k);
-    return `<span class="sent" data-s="${k}">${tokenize(S[k].t).map((p) => {
-      if (!p.w) return esc(p.t);
-      const saved = singles.has(norm(p.t)) || ranges.some(([a, b]) => p.i >= a && p.i <= b);
-      return `<span class="w${saved ? ' saved' : ''}" data-w="${p.i}">${esc(p.t)}</span>`;
-    }).join('')}</span>`;
-  }
-  const dur = (g) => S[g.b - 1].e - S[g.a].s;
-
-  function groupHtml(g, i, singles) {
-    const ko = S.slice(g.a, g.b).map((s) => s.ko).filter(Boolean).join(' ');
-    const head = i === 0 || st.groups[i - 1].sec !== g.sec
-      ? `<div class="sec-head">섹션 ${g.sec + 1} <span>${fmtTime(S[g.a].s)}</span></div>` : '';
-    const pstart = i > 0 && st.groups[i - 1].para !== g.para;
-    return `${head}<div class="seg${pstart ? ' pstart' : ''}" data-g="${i}">
-      <div class="num">${i + 1}</div>
-      <div class="body">
-        <div class="en">${Array.from({ length: g.b - g.a }, (_, j) => sentHtml(g.a + j, singles)).join(' ')}</div>
-        ${ko ? `<div class="ko">${esc(ko)}</div>` : ''}
-        <div class="len">${Math.round(dur(g))}초</div>
-      </div>
-    </div>`;
-  }
-
-  app.innerHTML = `
-    <div class="player-wrap">
-      <div class="player-head">
-        <button class="back" aria-label="뒤로">${icon('back')}</button>
-        <div class="title">${esc(talk.title)}</div>
-      </div>
-      <div class="player-box"><div id="yt"></div></div>
-    </div>
-    <div class="segments"></div>
-    <div class="controls"><div class="inner">
-      <div class="status"></div>
-      <div class="main-btns">
-        <button data-act="prev" aria-label="이전 구간">${icon('prev')}</button>
-        <button data-act="play" class="play" aria-label="처음부터 재생">${icon('play', 'fill')}<span>처음부터 재생</span></button>
-        <button data-act="stop" aria-label="정지">${icon('stop', 'fill')}</button>
-        <button data-act="next" aria-label="다음 구간">${icon('next')}</button>
-      </div>
-      <div class="chips unit-chips">${UNITS.map((u) =>
-        `${u.group !== undefined ? `<span class="chip-label">${u.group}</span>` : ''}<button class="chip" data-unit="${u.k}">${u.label}</button>`).join('')}</div>
-      <div class="chips">
-        <button class="chip" data-set="rate"></button>
-        <button class="chip" data-set="hideEn"></button>
-        <button class="chip" data-set="showKo"></button>
-      </div>
-    </div></div>`;
-
-  const segsEl = $('.segments');
-  const statusEl = $('.status');
-  const rowEl = (i) => segsEl.querySelector(`.seg[data-g="${i}"]`);
-
-  /* --- 묶음 단위 --- */
-  function regroup() {
-    const anchor = st.groups[st.g]?.a ?? Math.min(prog.last || 0, S.length - 1);
-    st.groups = buildGroups(talk, set.unit);
-    st.g = Math.max(0, st.groups.findIndex((g) => anchor >= g.a && anchor < g.b));
-    const singles = savedSingles();
-    segsEl.innerHTML = st.groups.map((g, i) => groupHtml(g, i, singles)).join('');
-    $$('[data-unit]').forEach((c) => c.classList.toggle('on', c.dataset.unit === set.unit));
-    setCurrent(st.g, false);
-    requestAnimationFrame(() => scrollToRow(rowEl(st.g), true));
-  }
-  $('.unit-chips').addEventListener('click', (e) => {
-    const c = e.target.closest('[data-unit]');
-    if (!c || c.dataset.unit === set.unit) return;
-    if (st.mode === 'seg') stop();
-    set.unit = c.dataset.unit;
-    save();
-    regroup();
-    c.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
-  });
-
-  /* --- 표시 설정 --- */
-  const OPTS = {
-    rate: { vals: [0.75, 0.85, 1, 1.15], label: (v) => `속도 <b>${v}x</b>` },
-    hideEn: { vals: [false, true], label: (v) => `영어 <b>${v ? '가림' : '보임'}</b>` },
-    showKo: { vals: [false, true], label: (v) => `해석 <b>${v ? '보임' : '숨김'}</b>` },
-  };
-  function renderChips() {
-    $$('[data-set]').forEach((c) => {
-      const k = c.dataset.set;
-      c.innerHTML = OPTS[k].label(set[k]);
-      c.classList.toggle('on', k !== 'rate' && set[k]);
-    });
-    document.body.classList.toggle('hide-en', set.hideEn);
-    document.body.classList.toggle('show-ko', set.showKo);
-  }
-  $$('[data-set]').forEach((c) => c.addEventListener('click', () => {
-    const k = c.dataset.set;
-    const vals = OPTS[k].vals;
-    set[k] = vals[(vals.indexOf(set[k]) + 1) % vals.length];
-    if (k === 'rate') st.player?.setPlaybackRate(set.rate);
-    if (k === 'hideEn') $$('.peek', segsEl).forEach((el) => el.classList.remove('peek'));
-    renderChips();
-    save();
-  }));
-
-  /* --- 상태 --- */
-  function renderStatus(text) {
-    const g = st.groups[st.g];
-    statusEl.textContent = text || `${st.g + 1} / ${st.groups.length} · ${Math.round(dur(g))}초${st.mode === 'seg' ? ' · 재생 중' : st.mode === 'free' ? ' · 연속 재생' : ''}`;
-  }
-  function setCurrent(i, scroll = true) {
-    rowEl(st.g)?.classList.remove('current');
-    st.g = i;
-    const row = rowEl(i);
-    row?.classList.add('current');
-    prog.last = st.groups[i].a;
-    save();
-    if (scroll) scrollToRow(row);
-    renderStatus();
-  }
-  function scrollToRow(row, force = false) {
-    if (!row) return;
-    const top = $('.player-wrap').getBoundingClientRect().bottom;
-    const bottom = $('.controls').getBoundingClientRect().top;
-    const r = row.getBoundingClientRect();
-    if (force || r.top < top + 8 || r.bottom > bottom - 8) {
-      window.scrollBy({ top: r.top - top - 12, behavior: force ? 'auto' : 'smooth' });
-    }
-  }
-  function markSpeaking(k) {
-    if (k === st.speaking) return;
-    segsEl.querySelector('.sent.speaking')?.classList.remove('speaking');
-    st.speaking = k;
-    if (k >= 0) segsEl.querySelector(`.sent[data-s="${k}"]`)?.classList.add('speaking');
-  }
-
-  /* --- 재생 --- */
-  function play(i) {
-    if (!st.player || i < 0 || i >= st.groups.length) return;
-    setCurrent(i);
-    const g = st.groups[i];
-    const next = S[g.b];
-    const tail = next ? Math.min(0.25, Math.max(0, next.s - S[g.b - 1].e)) : 0.4;
-    st.stopAt = S[g.b - 1].e + tail;
-    st.mode = 'seg';
-    st.player.setPlaybackRate(set.rate);
-    st.player.seekTo(Math.max(0, S[g.a].s - 0.05), true);
-    st.player.playVideo();
-    renderStatus();
-    watchFirstPlay(st.player);
-  }
-  function stop() {
-    st.mode = 'idle';
-    st.player?.pauseVideo();
-    markSpeaking(-1);
-    renderStatus();
-  }
-  function sentAt(t) {
-    let lo = 0, hi = S.length - 1, ans = 0;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (S[mid].s <= t + 0.05) { ans = mid; lo = mid + 1; } else hi = mid - 1;
-    }
-    return ans;
-  }
-  function tick() {
-    if (!st.player || !st.alive || st.mode === 'idle') return;
-    const t = st.player.getCurrentTime();
-    const k = sentAt(t);
-    if (st.mode === 'seg') {
-      markSpeaking(k);
-      if (t >= st.stopAt) stop();
-    } else if (st.mode === 'free') {
-      markSpeaking(k);
-      const gi = st.groups.findIndex((g) => k >= g.a && k < g.b);
-      if (gi >= 0 && gi !== st.g) setCurrent(gi);
-    }
-  }
-  function onState(s) {
-    // 유튜브 화면을 직접 눌러 재생하면 연속 재생 모드 (현재 구간이 따라감)
-    if (s === YS.PLAYING && st.mode === 'idle') { st.mode = 'free'; renderStatus(); }
-    else if ((s === YS.PAUSED || s === YS.ENDED) && st.mode === 'free') { st.mode = 'idle'; markSpeaking(-1); renderStatus(); }
-  }
-
-  /* --- 버튼 --- */
-  $('.back').addEventListener('click', () => (history.length > 1 ? history.back() : (location.hash = '#/')));
-  $('.main-btns').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (!b || !st.player) return;
-    const act = b.dataset.act;
-    if (act === 'play') play(st.g);
-    else if (act === 'stop') stop();
-    else if (act === 'prev') play(Math.max(0, st.g - 1));
-    else if (act === 'next') play(Math.min(st.groups.length - 1, st.g + 1));
-  });
-
-  /* --- 탭 = 재생, 길게 누르기 = 단어 저장 --- */
-  let press = null, suppressClick = false;
-  segsEl.addEventListener('pointerdown', (e) => {
-    const w = e.target.closest('.w');
-    if (!w) return;
-    press = { x: e.clientX, y: e.clientY, w, timer: setTimeout(() => {
-      press = null;
-      suppressClick = true;
-      w.classList.add('sel');
-      setTimeout(() => w.classList.remove('sel'), 400);
-      const k = +w.closest('.sent').dataset.s;
-      openWordSheet(k, +w.dataset.w);
-    }, 480) };
-  });
-  const cancelPress = () => { if (press) { clearTimeout(press.timer); press = null; } };
-  segsEl.addEventListener('pointermove', (e) => {
-    if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) cancelPress();
-  });
-  segsEl.addEventListener('pointerup', cancelPress);
-  segsEl.addEventListener('pointercancel', cancelPress);
-  segsEl.addEventListener('contextmenu', (e) => e.preventDefault());
-  segsEl.addEventListener('click', (e) => {
-    if (suppressClick) { suppressClick = false; return; }
-    const row = e.target.closest('.seg');
-    if (!row) return;
-    if (set.hideEn && !row.classList.contains('peek') && e.target.closest('.en')) { row.classList.add('peek'); return; }
-    play(+row.dataset.g);
-  });
-
-  /* --- 단어 시트 --- */
-  function openWordSheet(k, wIdx) {
-    const sent = S[k];
-    const words = wordsOf(sent.t);
-    let a = wIdx, b = wIdx;
-    const termOf = () => {
-      let t = words.slice(a, b + 1).join(' ');
-      if (a === b && t !== 'I' && !/^[A-Z]{2,}$/.test(t)) t = t.toLowerCase();
-      return t.replace(/’/g, "'");
-    };
-    if (st.mode !== 'idle') stop();
-
-    function draw() {
-      const term = termOf();
-      const existing = findCard(term);
-      const sh = openSheet(`
-        <div class="row" style="justify-content:space-between">
-          <div><div class="word">${esc(term)}</div><div class="ipa" id="ipa"></div></div>
-          <button class="btn small" id="say">${icon('sound')}발음</button>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <button class="btn small" id="ext-l" ${a === 0 ? 'disabled' : ''}>◀ 앞 단어 포함</button>
-          <button class="btn small" id="ext-r" ${b >= words.length - 1 ? 'disabled' : ''}>뒷 단어 포함 ▶</button>
-          ${a !== b ? '<button class="btn small" id="ext-reset">한 단어로</button>' : ''}
-        </div>
-        <div class="ctx">${highlightCtx(sent.t, [a, b])}</div>
-        <label>뜻 / 메모</label>
-        <textarea id="meaning" placeholder="예) 깜짝 놀라다, 감탄하다">${esc(existing?.meaning || '')}</textarea>
-        <div class="row" style="margin-top:6px">
-          <a class="btn small" target="_blank" rel="noopener" href="https://en.dict.naver.com/#/search?query=${encodeURIComponent(term)}">네이버 사전</a>
-          <a class="btn small" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent(term + ' meaning')}">구글 검색</a>
-        </div>
-        <label>영영 사전</label>
-        <div class="defs" id="defs">찾는 중…</div>
-        <div class="actions">
-          ${existing ? '<button class="btn" id="del">삭제</button>' : '<button class="btn" id="cancel">닫기</button>'}
-          <button class="btn primary" id="save">${existing ? '수정 저장' : '단어장에 저장'}</button>
-        </div>`);
-
-      let dict = null;
-      lookup(term).then((d) => {
-        dict = d;
-        if (termOf() !== term || sh.hidden) return;
-        $('#ipa').textContent = d?.phon || '';
-        $('#defs').innerHTML = d?.defs.length
-          ? d.defs.map((x) => `<p><em>${esc(x.pos)}</em>${esc(x.def)}</p>`).join('')
-          : '사전 결과가 없습니다 (네이버 사전을 이용하세요)';
-      });
-
-      $('#say').onclick = () => speak(term);
-      $('#ext-l').onclick = () => { a--; draw(); };
-      $('#ext-r').onclick = () => { b++; draw(); };
-      if ($('#ext-reset')) $('#ext-reset').onclick = () => { a = b = wIdx; draw(); };
-      if ($('#cancel')) $('#cancel').onclick = closeSheet;
-      if ($('#del')) $('#del').onclick = () => {
-        store.cards = store.cards.filter((c) => c !== existing);
-        save(); closeSheet(); refreshSaved();
-        toast('삭제했습니다');
-      };
-      $('#save').onclick = () => {
-        const meaning = $('#meaning').value.trim();
-        const def = dict?.defs.slice(0, 2).map((x) => `(${x.pos}) ${x.def}`).join('\n') || '';
-        if (existing) {
-          Object.assign(existing, { meaning, def: existing.def || def, phon: existing.phon || dict?.phon || '' });
-        } else {
-          store.cards.push({
-            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-            text: term, meaning, def, phon: dict?.phon || '',
-            ctx: sent.t, ko: sent.ko || '', range: [a, b],
-            talkId: id, title: talk.title, sent: k, start: sent.s, end: sent.e,
-            created: Date.now(), due: Date.now(), ivl: 0, ease: 2.5, reps: 0, lapses: 0,
-          });
-        }
-        save(); closeSheet(); refreshSaved();
-        toast(existing ? '수정했습니다' : `"${term}" 저장 ✓`);
-      };
-    }
-    draw();
-  }
-  function refreshSaved() {
-    const singles = savedSingles();
-    $$('.w', segsEl).forEach((w) => {
-      const k = +w.closest('.sent').dataset.s;
-      const i = +w.dataset.w;
-      w.classList.toggle('saved', singles.has(norm(w.textContent)) || savedRanges(k).some(([a, b]) => i >= a && i <= b));
-    });
-  }
-
-  /* --- 초기화 --- */
-  const startAt = +(new URLSearchParams(location.hash.split('?')[1] || '').get('s') ?? NaN);
-  if (!Number.isNaN(startAt) && startAt >= 0 && startAt < S.length) prog.last = startAt;
-  renderChips();
-  regroup();
-  renderStatus('플레이어 준비 중…');
-
-  try { st.wake = await navigator.wakeLock?.request('screen'); } catch {}
-  cleanup = () => {
-    st.alive = false;
-    clearInterval(st.timer);
-    try { st.player?.destroy(); } catch {}
-    st.wake?.release?.().catch(() => {});
-  };
-
-  st.player = await makePlayer($('#yt'), id, { onState, vars: { start: Math.floor(S[st.groups[st.g].a].s) } });
-  if (!st.alive) { try { st.player.destroy(); } catch {} return; }
-  st.player.setPlaybackRate(set.rate);
-  st.timer = setInterval(tick, 50);
-  renderStatus();
+// ---------- 점검 화면 ----------
+let toastTimer = 0;
+function toast(text) {
+  const t = $('toast');
+  t.textContent = text; t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 1600);
 }
-
-/* =========================================================
-   단어장
-   ========================================================= */
-function viewVocab() {
-  const now = Date.now();
-  const cards = store.cards;
-  const due = dueCards().length;
-  const fresh = cards.filter((c) => c.reps === 0 && c.ivl === 0).length;
-  app.innerHTML = `
-    <h1>단어장</h1>
-    <div class="stats">
-      <div class="card"><b>${cards.length}</b><span>전체</span></div>
-      <div class="card"><b>${due}</b><span>지금 복습</span></div>
-      <div class="card"><b>${fresh}</b><span>새 단어</span></div>
-    </div>
-    ${due ? `<a class="btn primary" style="width:100%;margin-bottom:16px" href="#/review">복습 시작 (${due})</a>` : ''}
-    <input class="search" type="search" placeholder="검색" id="q">
-    <div id="vlist"></div>
-    <h2>백업</h2>
-    <p class="sub">단어장은 이 기기(브라우저)에만 저장됩니다. 가끔 백업 파일을 내보내 두세요.</p>
-    <div class="row">
-      <button class="btn" id="export">내보내기</button>
-      <label class="btn" style="margin:0">가져오기<input type="file" id="import" accept=".json,application/json" hidden></label>
-    </div>`;
-
-  const draw = () => {
-    const q = norm($('#q').value);
-    const list = cards
-      .filter((c) => !q || norm(c.text).includes(q) || (c.meaning || '').includes(q))
-      .sort((a, b) => b.created - a.created);
-    $('#vlist').innerHTML = list.length ? list.map((c) => `
-      <div class="v-item card" data-id="${c.id}">
-        <div class="main">
-          <div class="t">${esc(c.text)}</div>
-          ${c.meaning ? `<div class="m">${esc(c.meaning)}</div>` : ''}
-          <div class="c">${highlightCtx(c.ctx, c.range)}</div>
-        </div>
-        <div class="due">${c.due <= now ? '복습 대기' : fmtIvl(c.due - now) + ' 후'}</div>
-      </div>`).join('') : `<div class="empty">${cards.length ? '검색 결과가 없습니다' : '강연 화면에서 단어를 길게 누르면 여기에 모입니다'}</div>`;
-  };
-  draw();
-  $('#q').addEventListener('input', draw);
-  $('#vlist').addEventListener('click', (e) => {
-    const it = e.target.closest('.v-item');
-    if (it) editCard(store.cards.find((c) => c.id === it.dataset.id), draw);
-  });
-  $('#export').onclick = exportBackup;
-  $('#import').onchange = (e) => importBackup(e.target.files[0]).then(() => viewVocab());
+const NAMES = { play: '재생', pause: '일시정지', nexttrack: '다음 곡', previoustrack: '이전 곡', seekforward: '앞으로 건너뛰기', seekbackward: '뒤로 건너뛰기' };
+function signal(action) {
+  const when = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  signals.unshift(`${when} ${NAMES[action] || action}${document.hidden ? ' (화면 꺼짐)' : ''}`);
+  signals.length = Math.min(signals.length, 10);
+  toast(`이어폰 신호: ${NAMES[action] || action}`);
+  renderSheet();
 }
-
-function editCard(c, onDone) {
-  openSheet(`
-    <div class="row" style="justify-content:space-between">
-      <div><div class="word">${esc(c.text)}</div><div class="ipa">${esc(c.phon || '')}</div></div>
-      <button class="btn small" id="say">${icon('sound')}발음</button>
-    </div>
-    <div class="ctx">${highlightCtx(c.ctx, c.range)}${c.ko ? `<div style="color:var(--muted);font-size:13px;margin-top:6px">${esc(c.ko)}</div>` : ''}</div>
-    <label>뜻 / 메모</label>
-    <textarea id="meaning">${esc(c.meaning || '')}</textarea>
-    ${c.def ? `<label>영영 사전</label><div class="defs">${esc(c.def).replace(/\n/g, '<br>')}</div>` : ''}
-    <div class="row" style="margin-top:12px">
-      <a class="btn small" href="#/talk/${encodeURIComponent(c.talkId)}?s=${c.sent ?? 0}">▶ 강연에서 보기</a>
-      <a class="btn small" target="_blank" rel="noopener" href="https://en.dict.naver.com/#/search?query=${encodeURIComponent(c.text)}">네이버 사전</a>
-    </div>
-    <div class="actions">
-      <button class="btn" id="del">삭제</button>
-      <button class="btn primary" id="save">저장</button>
-    </div>`);
-  $('#say').onclick = () => speak(c.text);
-  $('#del').onclick = () => {
-    if (!confirm(`"${c.text}"을(를) 삭제할까요?`)) return;
-    store.cards = store.cards.filter((x) => x !== c);
-    save(); closeSheet(); onDone?.();
-    if (location.hash.startsWith('#/vocab')) viewVocab();
-  };
-  $('#save').onclick = () => { c.meaning = $('#meaning').value.trim(); save(); closeSheet(); onDone?.(); };
+function recordStop(late) {
+  stops.unshift({ ms: Math.round(late * 1000), hidden: document.hidden });
+  stops.length = Math.min(stops.length, 20);
+  renderSheet();
 }
-
-function exportBackup() {
-  const data = JSON.stringify({ app: 'ted-shadowing', version: 1, exported: new Date().toISOString(), ...store }, null, 1);
-  const blob = new Blob([data], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `shadowing-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+function renderSheet() {
+  if ($('sheet').hidden) return;
+  $('signals').innerHTML = signals.map((s) => `<li>${esc(s)}</li>`).join('') || '<li>아직 없음</li>';
+  const vis = stops.filter((s) => !s.hidden).map((s) => s.ms);
+  const hid = stops.filter((s) => s.hidden).map((s) => s.ms);
+  const stat = (a) => (a.length ? `평균 ${Math.round(a.reduce((x, y) => x + y, 0) / a.length)}ms, 최대 ${Math.max(...a)}ms (${a.length}회)` : '기록 없음');
+  $('stopStats').textContent = `화면 켜짐: ${stat(vis)} / 화면 꺼짐: ${stat(hid)}`;
+  $('stops').innerHTML = stops.map((s) => `<li>${s.ms}ms${s.hidden ? ' (화면 꺼짐)' : ''}</li>`).join('');
+  $('engine').textContent = `${nativeHls ? '아이폰 기본 재생(HLS)' : 'hls.js'} · ${showVideo ? '영상' : '오디오'}`;
 }
-async function importBackup(file) {
-  if (!file) return;
+$('talkInfo').addEventListener('click', () => { $('sheet').hidden = false; renderSheet(); });
+$('sheetClose').addEventListener('click', () => { $('sheet').hidden = true; });
+
+// ---------- 시작 ----------
+async function start() {
+  const st = load();
+  showKo = st.showKo !== false;
+  showVideo = st.showVideo === true;
+  applyToggles();
   try {
-    const data = JSON.parse(await file.text());
-    if (!Array.isArray(data.cards)) throw new Error();
-    const byId = new Map(store.cards.map((c) => [c.id, c]));
-    for (const c of data.cards) byId.set(c.id, c);
-    store.cards = [...byId.values()];
-    for (const [k, p] of Object.entries(data.progress || {})) {
-      const cur = progressOf(k);
-      cur.last = p.last ?? cur.last;
-    }
-    save();
-    toast(`가져오기 완료 · 단어 ${data.cards.length}개`);
-  } catch { toast('백업 파일을 읽을 수 없습니다'); }
-}
-
-/* =========================================================
-   복습 (안키 방식)
-   ========================================================= */
-function viewReview() {
-  let player = null, playerVideo = null, clipEnd = 0, clipTimer = 0;
-  cleanup = () => { clearInterval(clipTimer); try { player?.destroy(); } catch {} };
-
-  function next() {
-    clearInterval(clipTimer);
-    try { player?.destroy(); } catch {}
-    player = null; playerVideo = null;
-
-    let queue = dueCards();
-    if (!queue.length) queue = dueCards(20 * 60e3); // 방금 '다시' 누른 카드
-    if (!queue.length) {
-      const upcoming = store.cards.length ? Math.min(...store.cards.map((c) => c.due)) : 0;
-      app.innerHTML = `<h1>복습</h1><div class="empty">🎉 지금 복습할 단어가 없습니다.<br>${
-        store.cards.length ? `다음 복습: ${fmtIvl(upcoming - Date.now())} 후` : '강연에서 단어를 길게 눌러 모아보세요.'}</div>`;
-      updateBadge();
-      return;
-    }
-    const c = queue[0];
-    const left = dueCards().length;
-    app.innerHTML = `
-      <h1>복습</h1><p class="sub">남은 카드 ${left || queue.length}장</p>
-      <div class="card flash">
-        <div class="front">
-          <div class="term">${esc(c.text)}</div>
-          <button class="btn small" id="say">${icon('sound')}발음</button>
-          <div class="ctx">${highlightCtx(c.ctx, c.range)}</div>
-        </div>
-        <div class="back" hidden>
-          <div class="meaning">${esc(c.meaning || '(뜻을 적지 않았습니다)')}</div>
-          ${c.phon ? `<div style="text-align:center;color:var(--muted)">${esc(c.phon)}</div>` : ''}
-          ${c.def ? `<div class="defs">${esc(c.def).replace(/\n/g, '<br>')}</div>` : ''}
-          ${c.ko ? `<div class="defs">💬 ${esc(c.ko)}</div>` : ''}
-          <div class="row" style="margin-top:12px;justify-content:center">
-            <button class="btn small" id="clip">${icon('play', 'fill')}원문 듣기</button>
-            <button class="btn small" id="edit">${icon('edit')}수정</button>
-          </div>
-          <div class="review-player" hidden><div class="player-box"><div id="rp"></div></div></div>
-        </div>
-        <div style="flex:1"></div>
-        <button class="btn primary" id="show" style="margin-top:20px">정답 보기</button>
-        <div class="grades" hidden>
-          ${['다시', '어려움', '알맞음', '쉬움'].map((l, g) =>
-            `<button data-g="${g}" class="${['again', '', 'good', ''][g]}">${l}<small>${fmtIvl(schedule(c, g).due - Date.now())}</small></button>`).join('')}
-        </div>
-      </div>`;
-    $('#say').onclick = () => speak(c.text);
-    $('#show').onclick = () => {
-      $('.back').hidden = false; $('.grades').hidden = false; $('#show').hidden = true;
-      speak(c.text);
-    };
-    $('#edit').onclick = () => editCard(c, next);
-    $('#clip').onclick = async () => {
-      $('.review-player').hidden = false;
-      if (!player || playerVideo !== c.talkId) {
-        player = await makePlayer($('#rp'), c.talkId, { vars: { start: Math.floor(c.start) } });
-        playerVideo = c.talkId;
-      }
-      player.seekTo(Math.max(0, c.start - 0.05), true);
-      player.playVideo();
-      watchFirstPlay(player);
-      clipEnd = c.end + 0.25;
-      clearInterval(clipTimer);
-      clipTimer = setInterval(() => {
-        try { if (player.getCurrentTime() >= clipEnd) { player.pauseVideo(); clearInterval(clipTimer); } } catch {}
-      }, 50);
-    };
-    $('.grades').onclick = (e) => {
-      const b = e.target.closest('[data-g]');
-      if (!b) return;
-      Object.assign(c, schedule(c, +b.dataset.g));
-      save();
-      next();
-    };
+    const index = await (await fetch('talks/index.json', { cache: 'no-cache' })).json();
+    const id = (index.find((t) => t.id === st.talk) || index[0] || {}).id;
+    if (!id) { $('talkTitle').textContent = '강연이 없습니다'; return; }
+    talk = await (await fetch(`talks/${id}.json`)).json();
+  } catch (e) {
+    $('talkTitle').textContent = '강연을 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.';
+    return;
   }
-  next();
+  S = talk.sentences;
+  const pos = (st.pos || {})[talk.id];
+  cur = pos >= 0 && pos < S.length ? pos : 0;
+  build();
+  mark(true);
+  attach(media(), mediaUrl());
+  if (showVideo) video.addEventListener('loadedmetadata', () => { video.currentTime = S[cur].s; }, { once: true });
+  save();
+  requestAnimationFrame(frame);
 }
-
-/* ---------------- 시작 ---------------- */
-updateBadge();
-route();
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
-}
+start();
