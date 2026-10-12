@@ -252,7 +252,7 @@ async function viewLibrary() {
   } catch {}
   const list = $('#list');
   if (!talks.length) {
-    list.innerHTML = `<div class="empty">아직 강연이 없습니다.<br><br>PC에서 실행:<br><code>python tools/add_talk.py &lt;유튜브 주소&gt; -c 카테고리</code></div>`;
+    list.innerHTML = `<div class="empty">강연을 준비 중입니다.<br><small>곧 마케팅 TED 강연이 추가됩니다.</small></div>`;
     return;
   }
   const cats = [...new Set(talks.map((t) => t.category || '기타'))];
