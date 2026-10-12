@@ -32,6 +32,8 @@ let ci = 0;             // 지금 구간 번호
 let unit = UNITS[0];
 let showKo = true;
 let showVideo = false;
+let hideEn = false;      // F4 영어 가리기 (듣기 모드)
+let revealedCi = -1;    // 가린 상태에서 눌러서 영어를 보이게 한 구간
 let target = null;      // 지금 재생 중인 구간 {s, e, ci}
 let stopTimer = 0;
 const attached = new WeakMap();
@@ -45,6 +47,7 @@ function save() {
     const st = load();
     st.showKo = showKo;
     st.showVideo = showVideo;
+    st.hideEn = hideEn;
     st.unit = unit.id;
     st.talk = talk && talk.id;
     // 위치는 구간 첫 문장 번호로 기억 (단위를 바꿔도 같은 곳에서 이어지게)
@@ -251,7 +254,15 @@ function build() {
 }
 list.addEventListener('click', (ev) => {
   const b = ev.target.closest('.sent');
-  if (b) play(chunkOf(+b.dataset.i));
+  if (!b) return;
+  const k = chunkOf(+b.dataset.i);
+  // 영어를 가린 상태에서 지금 구간을 누르면 먼저 영어를 보여 준다 (재생은 다시 누를 때)
+  if (hideEn && k === ci && revealedCi !== ci) {
+    revealedCi = ci;
+    list.classList.add('reveal');
+    return;
+  }
+  play(k);
 });
 
 let marked = null;      // 표시 중인 구간 {a, b}
@@ -274,6 +285,7 @@ function mark(instant) {
   gaps.forEach((g) => { const i = +g.dataset.before; if (i > c.a && i < c.b) g.classList.add('in'); });
   marked = c;
   list.classList.toggle('big', !!unit.big);
+  list.classList.toggle('reveal', revealedCi === ci);
   $('counter').textContent = `처음부터 듣기 · ${ci + 1} / ${chunks.length}`;
   prepareWords();
   said = -1;
@@ -287,7 +299,9 @@ function applyToggles() {
   $('koT').setAttribute('aria-pressed', String(showKo));
   $('videoT').setAttribute('aria-pressed', String(showVideo));
   $('videoBox').hidden = !showVideo;
-  $('unitBtn').textContent = unit.label;
+  document.body.classList.toggle('hide-en', hideEn);
+  $('unitBtn').textContent = hideEn ? `${unit.label} · 가림` : unit.label;
+  $('hideT').setAttribute('aria-pressed', String(hideEn));
 }
 $('koT').addEventListener('click', () => { showKo = !showKo; applyToggles(); save(); mark(true); });
 $('videoT').addEventListener('click', async () => {
@@ -325,6 +339,12 @@ $('units').addEventListener('click', (ev) => {
   $('sheet').hidden = true;
   setUnit(b.dataset.id);
 });
+$('hideT').addEventListener('click', () => {
+  hideEn = !hideEn;
+  revealedCi = -1;
+  list.classList.remove('reveal');
+  applyToggles(); save();
+});
 $('sheet').addEventListener('click', (ev) => { if (ev.target === $('sheet')) $('sheet').hidden = true; });
 
 // ---------- 이어폰·잠금화면 ----------
@@ -360,6 +380,7 @@ async function start() {
   const st = load();
   showKo = st.showKo !== false;
   showVideo = st.showVideo === true;
+  hideEn = st.hideEn === true;
   unit = UNITS.find((u) => u.id === st.unit) || UNITS[0];
   applyToggles();
   try {
