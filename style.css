@@ -1,26 +1,20 @@
 /* 화면: 위 = 강연·토글, (영상), 가운데 = 스크립트(지금 문장 중심), 아래 = 엄지 조작부 */
 :root {
-  --bg: #f3f5f7;
-  --surface: #ffffff;
-  --fg: #17202a;
-  --muted: #5d6b79;
-  --faint: #c9d1d9;
-  --accent: #1d5fd1;
-  --accent-soft: #e3ecfb;
-  --accent-fg: #ffffff;
-  --bar: #d3dae2;
-  --video-bg: #0b0f14;
+  /* 다크 모드 고정 (2026-10-13 사용자 요청) */
+  --bg: #0f141a;
+  --surface: #18202a;
+  --fg: #e8edf2;
+  --muted: #93a1af;
+  --faint: #33404d;
+  --accent: #6f9ef0;
+  --accent-soft: #1d2b42;
+  --accent-fg: #0f141a;
+  --bar: #44566b;
+  --video-bg: #000000;
   --font-en: "Source Serif 4", Georgia, "Times New Roman", serif;
   --font-ui: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f141a; --surface: #18202a; --fg: #e8edf2; --muted: #93a1af; --faint: #33404d;
-    --accent: #6f9ef0; --accent-soft: #1d2b42; --accent-fg: #0f141a; --bar: #44566b; --video-bg: #000000;
-    color-scheme: dark;
-  }
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
