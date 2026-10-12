@@ -8,6 +8,16 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const app = $('#app');
+const ICONS = {
+  prev: '<path d="M19 20 9 12l10-8v16Z"/><path d="M5 19V5"/>',
+  next: '<path d="m5 4 10 8-10 8V4Z"/><path d="M19 5v14"/>',
+  play: '<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.4-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  back: '<path d="m15 18-6-6 6-6"/>',
+  sound: '<path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+};
+const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 const DAY = 86400000;
 
 /* ---------------- 저장소 ---------------- */
@@ -30,7 +40,7 @@ function save() {
 navigator.storage?.persist?.().catch(() => {});
 
 function progressOf(id) {
-  return (store.progress[id] ||= { done: [], last: 0 });
+  return (store.progress[id] ||= { last: 0 });
 }
 
 /* ---------------- 공통 UI ---------------- */
@@ -255,8 +265,7 @@ async function viewLibrary() {
       <h2>${esc(c)}</h2>
       ${talks.filter((t) => (t.category || '기타') === c).map((t) => {
         const p = store.progress[t.id];
-        const done = p?.done.length || 0;
-        const pct = Math.round((done / t.sentences) * 100);
+        const pct = p ? Math.round(((p.last + 1) / t.sentences) * 100) : 0;
         return `<a class="talk-item card" href="#/talk/${encodeURIComponent(t.id)}">
           <img src="https://i.ytimg.com/vi/${esc(t.id)}/mqdefault.jpg" alt="" loading="lazy">
           <div class="meta">
@@ -335,7 +344,6 @@ async function viewTalk(id) {
   const set = store.settings;
   if (!UNITS.some((u) => u.k === set.unit)) set.unit = 's1';
   const prog = progressOf(id);
-  const doneSet = new Set(prog.done);
 
   const st = {
     groups: [], g: 0,
@@ -355,7 +363,6 @@ async function viewTalk(id) {
       return `<span class="w${saved ? ' saved' : ''}" data-w="${p.i}">${esc(p.t)}</span>`;
     }).join('')}</span>`;
   }
-  const groupDone = (g) => { for (let k = g.a; k < g.b; k++) if (!doneSet.has(k)) return false; return true; };
   const dur = (g) => S[g.b - 1].e - S[g.a].s;
 
   function groupHtml(g, i, singles) {
@@ -363,8 +370,8 @@ async function viewTalk(id) {
     const head = i === 0 || st.groups[i - 1].sec !== g.sec
       ? `<div class="sec-head">섹션 ${g.sec + 1} <span>${fmtTime(S[g.a].s)}</span></div>` : '';
     const pstart = i > 0 && st.groups[i - 1].para !== g.para;
-    return `${head}<div class="seg${pstart ? ' pstart' : ''}${groupDone(g) ? ' done' : ''}" data-g="${i}">
-      <div class="num">${groupDone(g) ? '✓' : i + 1}</div>
+    return `${head}<div class="seg${pstart ? ' pstart' : ''}" data-g="${i}">
+      <div class="num">${i + 1}</div>
       <div class="body">
         <div class="en">${Array.from({ length: g.b - g.a }, (_, j) => sentHtml(g.a + j, singles)).join(' ')}</div>
         ${ko ? `<div class="ko">${esc(ko)}</div>` : ''}
@@ -376,7 +383,7 @@ async function viewTalk(id) {
   app.innerHTML = `
     <div class="player-wrap">
       <div class="player-head">
-        <button class="back" aria-label="뒤로">‹</button>
+        <button class="back" aria-label="뒤로">${icon('back')}</button>
         <div class="title">${esc(talk.title)}</div>
       </div>
       <div class="player-box"><div id="yt"></div></div>
@@ -385,11 +392,10 @@ async function viewTalk(id) {
     <div class="controls"><div class="inner">
       <div class="status"></div>
       <div class="main-btns">
-        <button data-act="prev" aria-label="이전 구간">⏮</button>
-        <button data-act="play" class="play" aria-label="처음부터 재생">▶<small>처음부터</small></button>
-        <button data-act="stop" aria-label="정지">⏹</button>
-        <button data-act="next" aria-label="다음 구간">⏭</button>
-        <button data-act="done" aria-label="외움 표시">✓<small>외움</small></button>
+        <button data-act="prev" aria-label="이전 구간">${icon('prev')}</button>
+        <button data-act="play" class="play" aria-label="처음부터 재생">${icon('play', 'fill')}<span>처음부터 재생</span></button>
+        <button data-act="stop" aria-label="정지">${icon('stop', 'fill')}</button>
+        <button data-act="next" aria-label="다음 구간">${icon('next')}</button>
       </div>
       <div class="chips unit-chips">${UNITS.map((u) =>
         `${u.group !== undefined ? `<span class="chip-label">${u.group}</span>` : ''}<button class="chip" data-unit="${u.k}">${u.label}</button>`).join('')}</div>
@@ -539,17 +545,6 @@ async function viewTalk(id) {
     else if (act === 'stop') stop();
     else if (act === 'prev') play(Math.max(0, st.g - 1));
     else if (act === 'next') play(Math.min(st.groups.length - 1, st.g + 1));
-    else if (act === 'done') {
-      const g = st.groups[st.g];
-      const on = !groupDone(g);
-      for (let k = g.a; k < g.b; k++) on ? doneSet.add(k) : doneSet.delete(k);
-      prog.done = [...doneSet].sort((x, y) => x - y);
-      save();
-      const row = rowEl(st.g);
-      row.classList.toggle('done', on);
-      $('.num', row).textContent = on ? '✓' : st.g + 1;
-      toast(on ? `${st.g + 1}번 구간 외움 ✓` : '외움 표시 해제');
-    }
   });
 
   /* --- 탭 = 재생, 길게 누르기 = 단어 저장 --- */
@@ -599,7 +594,7 @@ async function viewTalk(id) {
       const sh = openSheet(`
         <div class="row" style="justify-content:space-between">
           <div><div class="word">${esc(term)}</div><div class="ipa" id="ipa"></div></div>
-          <button class="btn small" id="say">🔊 발음</button>
+          <button class="btn small" id="say">${icon('sound')}발음</button>
         </div>
         <div class="row" style="margin-top:8px">
           <button class="btn small" id="ext-l" ${a === 0 ? 'disabled' : ''}>◀ 앞 단어 포함</button>
@@ -729,7 +724,7 @@ function viewVocab() {
           <div class="c">${highlightCtx(c.ctx, c.range)}</div>
         </div>
         <div class="due">${c.due <= now ? '복습 대기' : fmtIvl(c.due - now) + ' 후'}</div>
-      </div>`).join('') : `<div class="empty">${cards.length ? '검색 결과가 없습니다' : '강연 화면에서 단어를 탭하면 여기에 모입니다'}</div>`;
+      </div>`).join('') : `<div class="empty">${cards.length ? '검색 결과가 없습니다' : '강연 화면에서 단어를 길게 누르면 여기에 모입니다'}</div>`;
   };
   draw();
   $('#q').addEventListener('input', draw);
@@ -745,7 +740,7 @@ function editCard(c, onDone) {
   openSheet(`
     <div class="row" style="justify-content:space-between">
       <div><div class="word">${esc(c.text)}</div><div class="ipa">${esc(c.phon || '')}</div></div>
-      <button class="btn small" id="say">🔊 발음</button>
+      <button class="btn small" id="say">${icon('sound')}발음</button>
     </div>
     <div class="ctx">${highlightCtx(c.ctx, c.range)}${c.ko ? `<div style="color:var(--muted);font-size:13px;margin-top:6px">${esc(c.ko)}</div>` : ''}</div>
     <label>뜻 / 메모</label>
@@ -790,7 +785,6 @@ async function importBackup(file) {
     store.cards = [...byId.values()];
     for (const [k, p] of Object.entries(data.progress || {})) {
       const cur = progressOf(k);
-      cur.done = [...new Set([...cur.done, ...(p.done || [])])].sort((a, b) => a - b);
       cur.last = p.last ?? cur.last;
     }
     save();
@@ -815,7 +809,7 @@ function viewReview() {
     if (!queue.length) {
       const upcoming = store.cards.length ? Math.min(...store.cards.map((c) => c.due)) : 0;
       app.innerHTML = `<h1>복습</h1><div class="empty">🎉 지금 복습할 단어가 없습니다.<br>${
-        store.cards.length ? `다음 복습: ${fmtIvl(upcoming - Date.now())} 후` : '강연에서 단어를 탭해 모아보세요.'}</div>`;
+        store.cards.length ? `다음 복습: ${fmtIvl(upcoming - Date.now())} 후` : '강연에서 단어를 길게 눌러 모아보세요.'}</div>`;
       updateBadge();
       return;
     }
@@ -826,7 +820,7 @@ function viewReview() {
       <div class="card flash">
         <div class="front">
           <div class="term">${esc(c.text)}</div>
-          <button class="btn small" id="say">🔊 발음</button>
+          <button class="btn small" id="say">${icon('sound')}발음</button>
           <div class="ctx">${highlightCtx(c.ctx, c.range)}</div>
         </div>
         <div class="back" hidden>
@@ -835,8 +829,8 @@ function viewReview() {
           ${c.def ? `<div class="defs">${esc(c.def).replace(/\n/g, '<br>')}</div>` : ''}
           ${c.ko ? `<div class="defs">💬 ${esc(c.ko)}</div>` : ''}
           <div class="row" style="margin-top:12px;justify-content:center">
-            <button class="btn small" id="clip">▶ 원문 듣기</button>
-            <button class="btn small" id="edit">✎ 수정</button>
+            <button class="btn small" id="clip">${icon('play', 'fill')}원문 듣기</button>
+            <button class="btn small" id="edit">${icon('edit')}수정</button>
           </div>
           <div class="review-player" hidden><div class="player-box"><div id="rp"></div></div></div>
         </div>

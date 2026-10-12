@@ -243,3 +243,24 @@ body.in-talk #toast { bottom: calc(210px + var(--safe-b)); }
 .cat-chips .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .main-btns button.play small { font-size: 10px; opacity: .85; margin-top: 2px; }
 body.in-talk #app { padding-bottom: calc(190px + var(--safe-b)); }
+
+/* ---------- 아이콘 ---------- */
+.ic { width: 20px; height: 20px; flex: none; }
+.ic.fill { fill: currentColor; stroke-width: 1.5; }
+.btn .ic { width: 16px; height: 16px; }
+#tabs a .ic { width: 22px; height: 22px; margin-bottom: 2px; }
+.player-head .back { display: flex; align-items: center; justify-content: center; color: #fff; }
+.player-head .back .ic { width: 24px; height: 24px; }
+.main-btns { gap: 8px; }
+.main-btns button {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 52px; height: 52px; border-radius: 50%; background: var(--surface-2); color: var(--text);
+}
+.main-btns button .ic { width: 22px; height: 22px; }
+.main-btns button[data-act="stop"] .ic { width: 18px; height: 18px; }
+.main-btns button.play {
+  flex: 1; border-radius: 26px; gap: 8px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
+  background: var(--accent); color: #fff;
+}
+.main-btns button.play .ic { width: 18px; height: 18px; }
+.main-btns button:active { transform: scale(.96); }
