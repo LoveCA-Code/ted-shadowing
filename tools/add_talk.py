@@ -281,7 +281,7 @@ def main():
                 add_talk(url.strip(), cat.strip(), args.no_ko)
             except Exception as e:
                 print(f"✘ {url.strip()}: {e.__class__.__name__}: {str(e).splitlines()[0][:120]}")
-            time.sleep(1)
+            time.sleep(20)  # 유튜브 차단 방지
     elif args.url:
         add_talk(args.url, args.category, args.no_ko)
     else:
