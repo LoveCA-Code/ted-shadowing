@@ -24,7 +24,10 @@
 <div class="video" id="videoBox" hidden>
   <video id="video" playsinline webkit-playsinline preload="none"></video>
 </div>
-<main class="list" id="list"></main>
+<div class="stage">
+  <main class="list" id="list"></main>
+  <button id="speedBtn" type="button" class="speed" aria-label="재생 속도 바꾸기">1.0×</button>
+</div>
 <footer class="pad">
   <button type="button" class="side" id="prev" aria-label="이전 구간"><svg class="icon" viewBox="0 0 24 24"><path d="M6 5v14"/><path d="M19 5.5v13L9 12z"/></svg></button>
   <button type="button" class="main" id="play" aria-label="현재 구간 처음부터 재생">

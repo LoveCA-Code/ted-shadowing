@@ -32,6 +32,8 @@ let ci = 0;             // 지금 구간 번호
 let unit = UNITS[0];
 let showKo = true;
 let showVideo = false;
+const RATES = [0.75, 0.85, 1];
+let rate = 1;            // F5 재생 속도
 let hideEn = false;      // F4 영어 가리기 (듣기 모드)
 let peeking = false;    // 가린 구간을 누르고 있는 동안 영어를 보여 주는 중
 let target = null;      // 지금 재생 중인 구간 {s, e, ci}
@@ -48,6 +50,7 @@ function save() {
     st.showKo = showKo;
     st.showVideo = showVideo;
     st.hideEn = hideEn;
+    st.rate = rate;
     st.unit = unit.id;
     st.talk = talk && talk.id;
     // 위치는 구간 첫 문장 번호로 기억 (단위를 바꿔도 같은 곳에서 이어지게)
@@ -131,6 +134,7 @@ async function play(k) {
   target = { s: S[c.a].s, e: S[c.b - 1].e, ci };
   clearTimeout(stopTimer);
   setMetadata();
+  applyRate(m);
   const mine = ++playId;
   // 아이폰은 영상 스트림을 받기 전이나 막 받기 시작했을 때 위치 이동을 무시하고 처음부터 재생한다.
   // → 소리를 끈 채 재생을 시작하고, 실제로 구간 위치에 도착한 것을 확인한 뒤 소리를 켠다.
@@ -140,6 +144,7 @@ async function play(k) {
   const ok = await arrive(m, target.s, mine);
   if (mine !== playId) return;           // 그 사이 다른 구간을 눌렀음
   m.muted = false;
+  applyRate(m);           // 아이폰은 스트림을 새로 받으면 속도를 1로 되돌리는 경우가 있어 한 번 더
   if (!ok) { m.pause(); target = null; toast('구간으로 이동하지 못했습니다. 다시 눌러 주세요.'); return; }
   watch();
 }
@@ -343,6 +348,22 @@ $('units').addEventListener('click', (ev) => {
   $('sheet').hidden = true;
   setUnit(b.dataset.id);
 });
+// ---------- 재생 속도 ----------
+function applyRate(m) {
+  for (const el of m ? [m] : [audio, video]) { el.defaultPlaybackRate = rate; el.playbackRate = rate; el.preservesPitch = true; }
+}
+function showRate() {
+  const b = $('speedBtn');
+  b.textContent = `${rate === 1 ? '1.0' : rate}×`;
+  b.classList.toggle('slow', rate !== 1);
+}
+$('speedBtn').addEventListener('click', () => {
+  rate = RATES[(RATES.indexOf(rate) + 1) % RATES.length];
+  applyRate();
+  showRate(); save();
+  if (target) watch();    // 재생 중이면 남은 시간 계산을 새 속도로
+});
+
 $('hideT').addEventListener('click', () => {
   hideEn = !hideEn;
   endPeek();
@@ -384,6 +405,9 @@ async function start() {
   showKo = st.showKo !== false;
   showVideo = st.showVideo === true;
   hideEn = st.hideEn === true;
+  rate = RATES.includes(st.rate) ? st.rate : 1;
+  showRate();
+  applyRate();
   unit = UNITS.find((u) => u.id === st.unit) || UNITS[0];
   applyToggles();
   try {
