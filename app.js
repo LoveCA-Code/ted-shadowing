@@ -93,7 +93,7 @@ function watch() {
     m.pause();
     recordStop(m.currentTime - target.e);
     target = null;
-    progress(1);
+    progress(target.e);
     return;
   }
   stopTimer = setTimeout(watch, Math.max(8, Math.min(250, (left * 1000) / 2 / (m.playbackRate || 1))));
@@ -102,20 +102,27 @@ for (const m of [audio, video]) {
   m.addEventListener('timeupdate', () => { if (m === media() && target) watch(); });
 }
 
-// 진행 표시: 지금 문장 박스가 왼쪽부터 차오름
+// 진행 표시: 지금 문장의 단어가 말하는 순서대로 색칠된다 (단어 시간 x.w)
 function frame() {
-  if (target && !document.hidden) {
-    const m = media();
-    const p = (m.currentTime - target.s) / (target.e - target.s);
-    progress(Math.min(1, Math.max(0, p)));
-  }
+  if (target && !document.hidden) progress(media().currentTime);
   requestAnimationFrame(frame);
 }
-function progress(p) {
-  const on = list.querySelector('.sent.on');
-  if (on) on.style.setProperty('--p', (p * 100).toFixed(1) + '%');
+let said = -1;  // 색칠된 마지막 단어 번호
+function progress(t) {
   const x = S[cur];
-  if (x) $('clock').textContent = `${(p * (x.e - x.s)).toFixed(1)} / ${(x.e - x.s).toFixed(1)}초`;
+  if (!x) return;
+  const words = list.querySelectorAll('.sent.on .w');
+  let n = -1;
+  if (t !== null) {
+    const w = x.w || [];
+    while (n + 1 < words.length && (w[n + 1] ?? x.e) <= t + 0.03) n++;
+  }
+  if (n !== said) {
+    words.forEach((el, k) => el.classList.toggle('said', k <= n));
+    said = n;
+  }
+  const d = t === null ? 0 : Math.min(Math.max(0, t - x.s), x.e - x.s);
+  $('clock').textContent = `${d.toFixed(1)} / ${(x.e - x.s).toFixed(1)}초`;
 }
 
 // ---------- 화면 ----------
@@ -126,7 +133,8 @@ function build() {
   let html = '';
   S.forEach((x, i) => {
     if (i && paras.has(i)) html += '<div class="para-gap"></div>';
-    html += `<button type="button" class="sent" data-i="${i}">${esc(x.t)}<span class="ko">${esc(x.ko || '')}</span></button>`;
+    const words = x.t.trim().split(/\s+/).map((w) => `<span class="w">${esc(w)}</span>`).join(' ');
+    html += `<button type="button" class="sent" data-i="${i}">${words}<span class="ko">${esc(x.ko || '')}</span></button>`;
   });
   list.innerHTML = html;
   $('talkTitle').textContent = talk.title;
@@ -141,7 +149,7 @@ let prevOn = null;
 function mark(instant) {
   const items = list.querySelectorAll('.sent');
   if (prevOn !== null) {
-    for (const k of [prevOn - 1, prevOn, prevOn + 1]) if (items[k]) { items[k].classList.remove('on', 'near'); items[k].style.removeProperty('--p'); }
+    for (const k of [prevOn - 1, prevOn, prevOn + 1]) if (items[k]) { items[k].classList.remove('on', 'near'); items[k].querySelectorAll('.said').forEach((el) => el.classList.remove('said')); }
   }
   if (items[cur - 1]) items[cur - 1].classList.add('near');
   if (items[cur + 1]) items[cur + 1].classList.add('near');
@@ -149,7 +157,8 @@ function mark(instant) {
   on.classList.add('on');
   prevOn = cur;
   $('counter').textContent = `처음부터 듣기 · ${cur + 1} / ${S.length}`;
-  progress(0);
+  said = -1;
+  progress(null);
   // 스크립트 목록 안에서만 스크롤 (화면 전체가 밀리지 않게)
   requestAnimationFrame(() => {
     const top = on.offsetTop - list.clientHeight / 2 + on.offsetHeight / 2;
