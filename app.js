@@ -108,13 +108,15 @@ function frame() {
   requestAnimationFrame(frame);
 }
 let said = -1;  // 색칠된 마지막 단어 번호
+// 단어 시간이 없는 데이터면 문장 시간을 단어 수로 고르게 나눈다
+function evenTimes(x, n) { return Array.from({ length: n }, (_, k) => x.s + ((x.e - x.s) * k) / n); }
 function progress(t) {
   const x = S[cur];
   if (!x) return;
   const words = list.querySelectorAll('.sent.on .w');
   let n = -1;
   if (t !== null) {
-    const w = x.w || [];
+    const w = x.w || evenTimes(x, words.length);
     while (n + 1 < words.length && (w[n + 1] ?? x.e) <= t + 0.03) n++;
   }
   if (n !== said) {
@@ -253,7 +255,8 @@ async function start() {
     const index = await (await fetch('talks/index.json', { cache: 'no-cache' })).json();
     const id = (index.find((t) => t.id === st.talk) || index[0] || {}).id;
     if (!id) { $('talkTitle').textContent = '강연이 없습니다'; return; }
-    talk = await (await fetch(`talks/${id}.json`)).json();
+    // 강연 데이터는 매번 서버에서 확인 (휴대폰에 남은 예전 데이터와 새 앱이 섞이지 않게)
+    talk = await (await fetch(`talks/${id}.json`, { cache: 'no-cache' })).json();
   } catch (e) {
     $('talkTitle').textContent = '강연을 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.';
     return;
