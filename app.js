@@ -128,21 +128,34 @@ async function play(k) {
   target = { s: S[c.a].s, e: S[c.b - 1].e, ci };
   clearTimeout(stopTimer);
   setMetadata();
-  if (m.readyState >= 1) {
-    m.currentTime = target.s;
-  } else {
-    // 아직 영상 정보를 못 받은 상태(앱을 영상 켠 채로 시작한 첫 재생 등)에서는 위치 이동이 무시되고
-    // 처음부터 재생된다 → 소리를 끈 채 재생을 시작하고, 정보가 오면 구간 위치로 옮긴 뒤 소리를 켠다
-    m.muted = true;
-    const seekWhenReady = () => {
-      if (!target || target.ci !== ci) { m.muted = false; return; }
-      m.addEventListener('seeked', () => { m.muted = false; }, { once: true });
-      m.currentTime = target.s;
-    };
-    m.addEventListener('loadedmetadata', seekWhenReady, { once: true });
-  }
+  const mine = ++playId;
+  // 아이폰은 영상 스트림을 받기 전이나 막 받기 시작했을 때 위치 이동을 무시하고 처음부터 재생한다.
+  // → 소리를 끈 채 재생을 시작하고, 실제로 구간 위치에 도착한 것을 확인한 뒤 소리를 켠다.
+  m.muted = true;
+  if (m.readyState >= 1) m.currentTime = target.s;
   try { await m.play(); } catch (e) { m.muted = false; toast('재생할 수 없습니다. 다시 눌러 주세요.'); return; }
+  const ok = await arrive(m, target.s, mine);
+  if (mine !== playId) return;           // 그 사이 다른 구간을 눌렀음
+  m.muted = false;
+  if (!ok) { m.pause(); target = null; toast('구간으로 이동하지 못했습니다. 다시 눌러 주세요.'); return; }
   watch();
+}
+let playId = 0;
+
+// 위치 t에 실제로 도착할 때까지 이동을 다시 시도한다 (최대 약 5초)
+async function arrive(m, t, mine) {
+  for (let tries = 0; tries < 25; tries++) {
+    if (mine !== playId) return false;
+    if (Math.abs(m.currentTime - t) < 0.4 && !m.seeking) return true;
+    if (m.readyState >= 1 && !m.seeking) m.currentTime = t;
+    await new Promise((resolve) => {
+      const done = () => { m.removeEventListener('seeked', done); m.removeEventListener('loadedmetadata', done); resolve(); };
+      m.addEventListener('seeked', done);
+      m.addEventListener('loadedmetadata', done);
+      setTimeout(done, 200);
+    });
+  }
+  return Math.abs(m.currentTime - t) < 0.4;
 }
 
 // 구간 끝을 지키는 감시: 남은 시간의 절반씩 기다렸다 확인 (화면이 꺼져도 동작하도록 타이머 사용)
@@ -283,7 +296,9 @@ $('videoT').addEventListener('click', async () => {
   applyToggles(); save(); mark(true);
   if (showVideo) {  // 영상을 켜면 지금 구간의 첫 장면을 보여 준다
     await attach(video, talk.video.hls);
-    video.currentTime = S[chunks[ci].a].s;
+    const t = S[chunks[ci].a].s;
+    if (video.readyState >= 1) video.currentTime = t;
+    else video.addEventListener('loadedmetadata', () => { video.currentTime = t; }, { once: true });
   }
 });
 $('play').addEventListener('click', () => play(ci));
@@ -363,8 +378,8 @@ async function start() {
   ci = chunkOf(pos >= 0 && pos < S.length ? pos : 0);
   build();
   mark(true);
-  attach(media(), mediaUrl());
-  if (showVideo) video.addEventListener('loadedmetadata', () => { video.currentTime = S[chunks[ci].a].s; }, { once: true });
+  // 오디오는 미리 연결해 둔다. 영상은 아이폰이 누르기 전에 연결하면 위치 이동이 꼬이므로 첫 재생 때 연결한다.
+  if (!showVideo) attach(audio, talk.audio.hls);
   save();
   requestAnimationFrame(frame);
 }
