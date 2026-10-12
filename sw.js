@@ -1,5 +1,5 @@
 // 앱 화면은 오프라인에서도 열리도록 캐시 (소리·영상 재생은 인터넷 필요)
-const CACHE = 'shadowing-v4';
+const CACHE = 'shadowing-v5';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

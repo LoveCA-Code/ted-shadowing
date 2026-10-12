@@ -76,9 +76,21 @@ async function play(i) {
   const x = S[cur];
   target = { s: x.s, e: x.e, i: cur };
   clearTimeout(stopTimer);
-  m.currentTime = x.s;
   setMetadata();
-  try { await m.play(); } catch (e) { toast('재생할 수 없습니다. 다시 눌러 주세요.'); return; }
+  if (m.readyState >= 1) {
+    m.currentTime = x.s;
+  } else {
+    // 아직 영상 정보를 못 받은 상태(앱을 영상 켠 채로 시작한 첫 재생 등)에서는 위치 이동이 무시되고
+    // 처음부터 재생된다 → 소리를 끈 채 재생을 시작하고, 정보가 오면 문장 위치로 옮긴 뒤 소리를 켠다
+    m.muted = true;
+    const seekWhenReady = () => {
+      if (!target || target.i !== cur) { m.muted = false; return; }
+      m.addEventListener('seeked', () => { m.muted = false; }, { once: true });
+      m.currentTime = target.s;
+    };
+    m.addEventListener('loadedmetadata', seekWhenReady, { once: true });
+  }
+  try { await m.play(); } catch (e) { m.muted = false; toast('재생할 수 없습니다. 다시 눌러 주세요.'); return; }
   watch();
 }
 
