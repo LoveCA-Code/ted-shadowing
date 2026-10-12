@@ -1,0 +1,19 @@
+# 카테고리 | 유튜브 주소     (python tools/add_talk.py --list tools/talks.txt)
+
+마케팅·브랜딩 | https://www.youtube.com/watch?v=qp0HIF3SfI4   # Simon Sinek - How great leaders inspire action
+마케팅·브랜딩 | https://www.youtube.com/watch?v=xBIVlM435Zg   # Seth Godin - How to get your ideas to spread
+마케팅·브랜딩 | https://www.youtube.com/watch?v=audakxABYUc   # Rory Sutherland - Life lessons from an ad man
+마케팅·브랜딩 | https://www.youtube.com/watch?v=VO6XEQIsCoM   # Barry Schwartz - The paradox of choice
+
+데이터 분석 | https://www.youtube.com/watch?v=pLqjQ55tz-U     # David McCandless - The beauty of data visualization
+데이터 분석 | https://www.youtube.com/watch?v=Zwwanld4T1w     # Mona Chalabi - 3 ways to spot a bad statistic
+데이터 분석 | https://www.youtube.com/watch?v=_2u_eHHzRto     # Cathy O'Neil - The era of blind faith in big data must end
+데이터 분석 | https://www.youtube.com/watch?v=ogeGJS0GEF4     # Alan Smith - Why you should love statistics
+
+SEO·검색 | https://www.youtube.com/watch?v=5FmgHWkoIQU        # Ira Bowman - SEO Matters (TEDx, 자동 자막)
+SEO·검색 | https://www.youtube.com/watch?v=Fa4jQIW2etI        # Marcus Tandler - The future of search (TEDx, 자동 자막)
+SEO·검색 | https://www.youtube.com/watch?v=IaFQVNuAA3w        # Seth Stephens-Davidowitz - The secrets in our Google searches (TEDx, 자동 자막)
+
+AI·GEO | https://www.youtube.com/watch?v=3MwMII8n1qM          # Jessica Apotheker - What will happen to marketing in the age of AI?
+AI·GEO | https://www.youtube.com/watch?v=4GpNYaDkBcs          # Amaryllis Liampoti - Love, trust and marketing in the age of AI
+AI·GEO | https://www.youtube.com/watch?v=qIopJqbzXl0          # Ramkumar Sethuramalingam - Should you trust marketing AI? (TEDx, 자동 자막)

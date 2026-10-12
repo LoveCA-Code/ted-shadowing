@@ -217,5 +217,29 @@ body:not(.show-ko) .seg .ko { display: none; }
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 20px; font-size: 14px;
   max-width: calc(100% - 32px);
 }
-body.in-talk #toast { bottom: calc(170px + var(--safe-b)); }
+body.in-talk #toast { bottom: calc(210px + var(--safe-b)); }
 .v-item mark { background: var(--accent-soft); color: var(--text); font-weight: 600; border-radius: 3px; }
+
+/* ---------- v2: 묶음 단위 / 섹션 / 길게 누르기 ---------- */
+.segments { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.seg { cursor: pointer; }
+.seg.pstart { margin-top: 18px; }
+.sec-head {
+  margin: 22px 4px 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
+  font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: .02em;
+  display: flex; justify-content: space-between;
+}
+.sec-head span { color: var(--muted); font-weight: 500; }
+.segments > .sec-head:first-child { margin-top: 8px; }
+.sent { border-radius: 4px; transition: background-color .15s; }
+.sent.speaking { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.seg .len { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.seg:not(.current) .len { display: none; }
+.chip-label { flex: none; align-self: center; font-size: 11px; color: var(--muted); padding: 0 2px 0 6px; }
+.chip-label:empty { padding: 0 2px; }
+.unit-chips .chip { padding: 0 10px; }
+.unit-chips .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cat-chips { margin: 0 0 4px; }
+.cat-chips .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.main-btns button.play small { font-size: 10px; opacity: .85; margin-top: 2px; }
+body.in-talk #app { padding-bottom: calc(190px + var(--safe-b)); }

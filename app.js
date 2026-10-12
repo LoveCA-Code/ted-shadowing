@@ -12,7 +12,7 @@ const DAY = 86400000;
 
 /* ---------------- 저장소 ---------------- */
 const KEY = 'shadowing.v1';
-const DEFAULT_SETTINGS = { reps: 2, gap: 1.2, rate: 1, autoNext: true, hideEn: false, showKo: false };
+const DEFAULT_SETTINGS = { unit: 's1', rate: 1, hideEn: false, showKo: false };
 const store = (() => {
   let s = {};
   try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch {}
@@ -234,7 +234,7 @@ window.addEventListener('hashchange', route);
    강연 목록
    ========================================================= */
 async function viewLibrary() {
-  app.innerHTML = '<h1>TED Shadowing</h1><p class="sub">문장 단위로 듣고, 따라 말하고, 내 것으로.</p><div id="list"></div>';
+  app.innerHTML = '<h1>TED Shadowing</h1><p class="sub">구간을 듣고, 멈추고, 따라 말하기.</p><div class="chips cat-chips" id="cats"></div><div id="list"></div>';
   let talks = [];
   try {
     const r = await fetch('talks/index.json', { cache: 'no-cache' });
@@ -242,59 +242,134 @@ async function viewLibrary() {
   } catch {}
   const list = $('#list');
   if (!talks.length) {
-    list.innerHTML = `<div class="empty">아직 강연이 없습니다.<br><br>PC에서 실행:<br><code>python tools/add_talk.py &lt;유튜브 주소&gt;</code></div>`;
+    list.innerHTML = `<div class="empty">아직 강연이 없습니다.<br><br>PC에서 실행:<br><code>python tools/add_talk.py &lt;유튜브 주소&gt; -c 카테고리</code></div>`;
     return;
   }
-  list.innerHTML = talks.map((t) => {
-    const p = store.progress[t.id];
-    const done = p?.done.length || 0;
-    const pct = Math.round((done / t.count) * 100);
-    return `<a class="talk-item card" href="#/talk/${encodeURIComponent(t.id)}">
-      <img src="https://i.ytimg.com/vi/${esc(t.id)}/mqdefault.jpg" alt="" loading="lazy">
-      <div class="meta">
-        <div class="t">${esc(t.title)}</div>
-        <div class="s">${fmtTime(t.duration)} · ${t.count}문장 · 외운 문장 ${done}${p ? ` · ${p.last + 1}번째부터` : ''}</div>
-        <div class="bar"><i style="width:${pct}%"></i></div>
-      </div></a>`;
-  }).join('');
+  const cats = [...new Set(talks.map((t) => t.category || '기타'))];
+  let cur = store.settings.libCat && cats.includes(store.settings.libCat) ? store.settings.libCat : '전체';
+
+  const draw = () => {
+    $('#cats').innerHTML = ['전체', ...cats].map((c) => `<button class="chip${c === cur ? ' on' : ''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
+    const shown = cats.filter((c) => cur === '전체' || c === cur);
+    list.innerHTML = shown.map((c) => `
+      <h2>${esc(c)}</h2>
+      ${talks.filter((t) => (t.category || '기타') === c).map((t) => {
+        const p = store.progress[t.id];
+        const done = p?.done.length || 0;
+        const pct = Math.round((done / t.sentences) * 100);
+        return `<a class="talk-item card" href="#/talk/${encodeURIComponent(t.id)}">
+          <img src="https://i.ytimg.com/vi/${esc(t.id)}/mqdefault.jpg" alt="" loading="lazy">
+          <div class="meta">
+            <div class="t">${esc(t.title)}</div>
+            <div class="s">${fmtTime(t.duration)} · 섹션 ${t.sections} · 문단 ${t.paragraphs} · 문장 ${t.sentences}</div>
+            <div class="bar"><i style="width:${pct}%"></i></div>
+          </div></a>`;
+      }).join('')}`).join('');
+  };
+  draw();
+  $('#cats').addEventListener('click', (e) => {
+    const c = e.target.closest('[data-c]');
+    if (!c) return;
+    cur = c.dataset.c;
+    store.settings.libCat = cur;
+    save();
+    draw();
+  });
 }
 
 /* =========================================================
-   강연 — 구간 반복 플레이어
+   강연 — 구간 재생 (누를 때마다 처음부터, 끝나면 멈춤)
    ========================================================= */
+const UNITS = [
+  { k: 's1', label: '1문장', group: '문장' }, { k: 's2', label: '2문장' }, { k: 's3', label: '3문장' }, { k: 's4', label: '4문장' },
+  { k: 'p4', label: '¼문단', group: '문단' }, { k: 'p3', label: '⅓문단' }, { k: 'p2', label: '½문단' }, { k: 'p1', label: '1문단' },
+  { k: 'sec', label: '섹션', group: '' },
+];
+
+/* 문장/문단/섹션 경계로부터 재생 묶음 [a, b) 목록을 만든다 */
+function buildGroups(talk, unit) {
+  const S = talk.sentences;
+  const P = [...talk.paragraphs, S.length];
+  const X = [...talk.sections, talk.paragraphs.length];
+  const groups = [];
+  const secOfPara = [];
+  for (let x = 0; x < X.length - 1; x++) for (let p = X[x]; p < X[x + 1]; p++) secOfPara[p] = x;
+
+  if (unit === 'sec') {
+    for (let x = 0; x < X.length - 1; x++) groups.push({ a: P[X[x]], b: P[X[x + 1]], sec: x, para: X[x] });
+    return groups;
+  }
+  for (let p = 0; p < P.length - 1; p++) {
+    const pa = P[p], pb = P[p + 1];
+    const base = { sec: secOfPara[p], para: p };
+    if (unit[0] === 's') {
+      const n = +unit.slice(1);
+      for (let a = pa; a < pb; a += n) groups.push({ ...base, a, b: Math.min(pb, a + n) });
+    } else {
+      // 문단을 k 등분: 시간 길이가 고르게 되도록 문장 경계에서 자름
+      const k = Math.min(+unit.slice(1), pb - pa);
+      const t0 = S[pa].s, total = S[pb - 1].e - t0;
+      const cuts = [pa];
+      for (let j = 1; j < k; j++) {
+        const target = t0 + (total * j) / k;
+        let best = null;
+        for (let i = cuts[cuts.length - 1] + 1; i <= pb - (k - j); i++) {
+          if (best === null || Math.abs(S[i].s - target) < Math.abs(S[best].s - target)) best = i;
+        }
+        cuts.push(best);
+      }
+      cuts.push(pb);
+      for (let j = 0; j < cuts.length - 1; j++) groups.push({ ...base, a: cuts[j], b: cuts[j + 1] });
+    }
+  }
+  return groups;
+}
+
 async function viewTalk(id) {
   document.body.classList.add('in-talk');
   app.innerHTML = '<div class="empty">불러오는 중…</div>';
   const r = await fetch(`talks/${encodeURIComponent(id)}.json`, { cache: 'no-cache' });
   if (!r.ok) throw new Error('강연 파일을 찾을 수 없습니다: ' + id);
   const talk = await r.json();
-  const segs = talk.segments;
-  const S = store.settings;
+  const S = talk.sentences;
+  const set = store.settings;
+  if (!UNITS.some((u) => u.k === set.unit)) set.unit = 's1';
   const prog = progressOf(id);
   const doneSet = new Set(prog.done);
 
   const st = {
-    idx: Math.min(prog.last || 0, segs.length - 1),
-    mode: 'idle', // idle | seg | gap | free
-    repsDone: 0,
-    gapStart: 0, gapEnd: 0,
+    groups: [], g: 0,
+    mode: 'idle', // idle | seg | free
+    stopAt: 0, speaking: -1,
     player: null, timer: 0, wake: null, alive: true,
   };
 
   const savedSingles = () => new Set(store.cards.map((c) => norm(c.text)).filter((t) => !t.includes(' ')));
-  const savedRanges = (i) => store.cards.filter((c) => c.talkId === id && c.seg === i && c.range).map((c) => c.range);
+  const savedRanges = (k) => store.cards.filter((c) => c.talkId === id && c.sent === k && c.range).map((c) => c.range);
 
-  function rowHtml(seg, i) {
-    const singles = savedSingles();
-    const ranges = savedRanges(i);
-    const en = tokenize(seg.text).map((p) => {
+  function sentHtml(k, singles) {
+    const ranges = savedRanges(k);
+    return `<span class="sent" data-s="${k}">${tokenize(S[k].t).map((p) => {
       if (!p.w) return esc(p.t);
       const saved = singles.has(norm(p.t)) || ranges.some(([a, b]) => p.i >= a && p.i <= b);
       return `<span class="w${saved ? ' saved' : ''}" data-w="${p.i}">${esc(p.t)}</span>`;
-    }).join('');
-    return `<div class="seg${doneSet.has(i) ? ' done' : ''}" data-i="${i}">
-      <button class="num" data-play="${i}" aria-label="${i + 1}번 구간 재생">${doneSet.has(i) ? '✓' : i + 1}</button>
-      <div class="body"><div class="en">${en}</div>${seg.ko ? `<div class="ko">${esc(seg.ko)}</div>` : ''}</div>
+    }).join('')}</span>`;
+  }
+  const groupDone = (g) => { for (let k = g.a; k < g.b; k++) if (!doneSet.has(k)) return false; return true; };
+  const dur = (g) => S[g.b - 1].e - S[g.a].s;
+
+  function groupHtml(g, i, singles) {
+    const ko = S.slice(g.a, g.b).map((s) => s.ko).filter(Boolean).join(' ');
+    const head = i === 0 || st.groups[i - 1].sec !== g.sec
+      ? `<div class="sec-head">섹션 ${g.sec + 1} <span>${fmtTime(S[g.a].s)}</span></div>` : '';
+    const pstart = i > 0 && st.groups[i - 1].para !== g.para;
+    return `${head}<div class="seg${pstart ? ' pstart' : ''}${groupDone(g) ? ' done' : ''}" data-g="${i}">
+      <div class="num">${groupDone(g) ? '✓' : i + 1}</div>
+      <div class="body">
+        <div class="en">${Array.from({ length: g.b - g.a }, (_, j) => sentHtml(g.a + j, singles)).join(' ')}</div>
+        ${ko ? `<div class="ko">${esc(ko)}</div>` : ''}
+        <div class="len">${Math.round(dur(g))}초</div>
+      </div>
     </div>`;
   }
 
@@ -306,22 +381,20 @@ async function viewTalk(id) {
       </div>
       <div class="player-box"><div id="yt"></div></div>
     </div>
-    <div class="segments">${segs.map(rowHtml).join('')}</div>
+    <div class="segments"></div>
     <div class="controls"><div class="inner">
-      <div class="gap-bar"><i></i></div>
       <div class="status"></div>
       <div class="main-btns">
         <button data-act="prev" aria-label="이전 구간">⏮</button>
-        <button data-act="replay" aria-label="현재 구간 다시">↺</button>
-        <button data-act="play" class="play" aria-label="재생/정지">▶</button>
+        <button data-act="play" class="play" aria-label="처음부터 재생">▶<small>처음부터</small></button>
+        <button data-act="stop" aria-label="정지">⏹</button>
         <button data-act="next" aria-label="다음 구간">⏭</button>
         <button data-act="done" aria-label="외움 표시">✓<small>외움</small></button>
       </div>
+      <div class="chips unit-chips">${UNITS.map((u) =>
+        `${u.group !== undefined ? `<span class="chip-label">${u.group}</span>` : ''}<button class="chip" data-unit="${u.k}">${u.label}</button>`).join('')}</div>
       <div class="chips">
-        <button class="chip" data-set="reps"></button>
-        <button class="chip" data-set="gap"></button>
         <button class="chip" data-set="rate"></button>
-        <button class="chip" data-set="autoNext"></button>
         <button class="chip" data-set="hideEn"></button>
         <button class="chip" data-set="showKo"></button>
       </div>
@@ -329,183 +402,196 @@ async function viewTalk(id) {
 
   const segsEl = $('.segments');
   const statusEl = $('.status');
-  const gapBar = $('.gap-bar i');
-  const playBtn = $('[data-act="play"]');
-  const rowEl = (i) => segsEl.children[i];
+  const rowEl = (i) => segsEl.querySelector(`.seg[data-g="${i}"]`);
 
-  /* --- 설정 칩 --- */
+  /* --- 묶음 단위 --- */
+  function regroup() {
+    const anchor = st.groups[st.g]?.a ?? Math.min(prog.last || 0, S.length - 1);
+    st.groups = buildGroups(talk, set.unit);
+    st.g = Math.max(0, st.groups.findIndex((g) => anchor >= g.a && anchor < g.b));
+    const singles = savedSingles();
+    segsEl.innerHTML = st.groups.map((g, i) => groupHtml(g, i, singles)).join('');
+    $$('[data-unit]').forEach((c) => c.classList.toggle('on', c.dataset.unit === set.unit));
+    setCurrent(st.g, false);
+    requestAnimationFrame(() => scrollToRow(rowEl(st.g), true));
+  }
+  $('.unit-chips').addEventListener('click', (e) => {
+    const c = e.target.closest('[data-unit]');
+    if (!c || c.dataset.unit === set.unit) return;
+    if (st.mode === 'seg') stop();
+    set.unit = c.dataset.unit;
+    save();
+    regroup();
+    c.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  });
+
+  /* --- 표시 설정 --- */
   const OPTS = {
-    reps: { vals: [1, 2, 3, 5, 0], label: (v) => `반복 <b>${v === 0 ? '∞' : v + '회'}</b>` },
-    gap: { vals: [0, 1, 1.2, 1.5, 2], label: (v) => `따라할 시간 <b>${v === 0 ? '없음' : '×' + v}</b>` },
     rate: { vals: [0.75, 0.85, 1, 1.15], label: (v) => `속도 <b>${v}x</b>` },
-    autoNext: { vals: [true, false], label: (v) => `다음 구간 <b>${v ? '자동' : '멈춤'}</b>` },
     hideEn: { vals: [false, true], label: (v) => `영어 <b>${v ? '가림' : '보임'}</b>` },
     showKo: { vals: [false, true], label: (v) => `해석 <b>${v ? '보임' : '숨김'}</b>` },
   };
   function renderChips() {
-    $$('.chip').forEach((c) => {
+    $$('[data-set]').forEach((c) => {
       const k = c.dataset.set;
-      c.innerHTML = OPTS[k].label(S[k]);
-      c.classList.toggle('on', (k === 'hideEn' || k === 'showKo') && S[k]);
+      c.innerHTML = OPTS[k].label(set[k]);
+      c.classList.toggle('on', k !== 'rate' && set[k]);
     });
-    document.body.classList.toggle('hide-en', S.hideEn);
-    document.body.classList.toggle('show-ko', S.showKo);
+    document.body.classList.toggle('hide-en', set.hideEn);
+    document.body.classList.toggle('show-ko', set.showKo);
   }
-  renderChips();
-  $('.chips').addEventListener('click', (e) => {
-    const c = e.target.closest('.chip');
-    if (!c) return;
+  $$('[data-set]').forEach((c) => c.addEventListener('click', () => {
     const k = c.dataset.set;
     const vals = OPTS[k].vals;
-    S[k] = vals[(vals.indexOf(S[k]) + 1) % vals.length];
-    if (k === 'rate') st.player?.setPlaybackRate(S.rate);
+    set[k] = vals[(vals.indexOf(set[k]) + 1) % vals.length];
+    if (k === 'rate') st.player?.setPlaybackRate(set.rate);
+    if (k === 'hideEn') $$('.peek', segsEl).forEach((el) => el.classList.remove('peek'));
     renderChips();
-    renderStatus();
     save();
-  });
+  }));
 
-  /* --- 상태 표시 --- */
+  /* --- 상태 --- */
   function renderStatus(text) {
-    statusEl.classList.toggle('say', st.mode === 'gap');
-    if (text) statusEl.textContent = text;
-    else if (st.mode === 'gap') statusEl.textContent = '🗣 따라 말해보세요';
-    else if (st.mode === 'seg') statusEl.textContent = `${st.idx + 1} / ${segs.length} · ${st.repsDone + 1}${S.reps ? '/' + S.reps : ''}회째`;
-    else if (st.mode === 'free') statusEl.textContent = `연속 재생 중 · ${st.idx + 1} / ${segs.length}`;
-    else statusEl.textContent = `${st.idx + 1} / ${segs.length} · 외운 문장 ${doneSet.size}`;
-    playBtn.textContent = st.mode === 'idle' ? '▶' : '⏸';
-    if (st.mode !== 'gap') gapBar.style.width = '0';
+    const g = st.groups[st.g];
+    statusEl.textContent = text || `${st.g + 1} / ${st.groups.length} · ${Math.round(dur(g))}초${st.mode === 'seg' ? ' · 재생 중' : st.mode === 'free' ? ' · 연속 재생' : ''}`;
   }
-
   function setCurrent(i, scroll = true) {
-    rowEl(st.idx)?.classList.remove('current');
-    st.idx = i;
+    rowEl(st.g)?.classList.remove('current');
+    st.g = i;
     const row = rowEl(i);
-    row.classList.add('current');
-    prog.last = i;
+    row?.classList.add('current');
+    prog.last = st.groups[i].a;
     save();
     if (scroll) scrollToRow(row);
+    renderStatus();
   }
-  function scrollToRow(row) {
+  function scrollToRow(row, force = false) {
+    if (!row) return;
     const top = $('.player-wrap').getBoundingClientRect().bottom;
     const bottom = $('.controls').getBoundingClientRect().top;
     const r = row.getBoundingClientRect();
-    if (r.top < top + 8 || r.bottom > bottom - 8) {
-      window.scrollBy({ top: r.top - top - (bottom - top) * 0.25, behavior: 'smooth' });
+    if (force || r.top < top + 8 || r.bottom > bottom - 8) {
+      window.scrollBy({ top: r.top - top - 12, behavior: force ? 'auto' : 'smooth' });
     }
   }
+  function markSpeaking(k) {
+    if (k === st.speaking) return;
+    segsEl.querySelector('.sent.speaking')?.classList.remove('speaking');
+    st.speaking = k;
+    if (k >= 0) segsEl.querySelector(`.sent[data-s="${k}"]`)?.classList.add('speaking');
+  }
 
-  /* --- 재생 엔진 --- */
-  function playSegment(i, resetReps = true) {
-    if (!st.player || i < 0 || i >= segs.length) return;
-    if (resetReps) st.repsDone = 0;
+  /* --- 재생 --- */
+  function play(i) {
+    if (!st.player || i < 0 || i >= st.groups.length) return;
     setCurrent(i);
+    const g = st.groups[i];
+    const next = S[g.b];
+    const tail = next ? Math.min(0.25, Math.max(0, next.s - S[g.b - 1].e)) : 0.4;
+    st.stopAt = S[g.b - 1].e + tail;
     st.mode = 'seg';
-    st.player.setPlaybackRate(S.rate);
-    st.player.seekTo(Math.max(0, segs[i].start - 0.05), true);
+    st.player.setPlaybackRate(set.rate);
+    st.player.seekTo(Math.max(0, S[g.a].s - 0.05), true);
     st.player.playVideo();
     renderStatus();
+    watchFirstPlay(st.player);
   }
   function stop() {
     st.mode = 'idle';
     st.player?.pauseVideo();
+    markSpeaking(-1);
     renderStatus();
   }
-  function onSegmentEnd() {
-    st.player.pauseVideo();
-    st.repsDone++;
-    const seg = segs[st.idx];
-    if (S.gap > 0) {
-      const ms = ((seg.end - seg.start) / S.rate) * S.gap * 1000 + 600;
-      st.mode = 'gap';
-      st.gapStart = performance.now();
-      st.gapEnd = st.gapStart + ms;
-      renderStatus();
-    } else afterGap();
-  }
-  function afterGap() {
-    if (S.reps === 0 || st.repsDone < S.reps) return playSegment(st.idx, false);
-    if (S.autoNext && st.idx < segs.length - 1) return playSegment(st.idx + 1);
-    st.mode = 'idle';
-    renderStatus(st.idx >= segs.length - 1 ? '🎉 마지막 구간입니다' : undefined);
-  }
-  function segAt(t) {
-    let lo = 0, hi = segs.length - 1, ans = 0;
+  function sentAt(t) {
+    let lo = 0, hi = S.length - 1, ans = 0;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if (segs[mid].start <= t + 0.05) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+      if (S[mid].s <= t + 0.05) { ans = mid; lo = mid + 1; } else hi = mid - 1;
     }
     return ans;
   }
   function tick() {
-    if (!st.player || !st.alive) return;
+    if (!st.player || !st.alive || st.mode === 'idle') return;
+    const t = st.player.getCurrentTime();
+    const k = sentAt(t);
     if (st.mode === 'seg') {
-      const seg = segs[st.idx];
-      const next = segs[st.idx + 1];
-      const tail = next ? Math.min(0.2, Math.max(0, next.start - seg.end)) : 0.3;
-      if (st.player.getCurrentTime() >= seg.end + tail) onSegmentEnd();
-    } else if (st.mode === 'gap') {
-      const now = performance.now();
-      gapBar.style.width = `${Math.min(100, ((now - st.gapStart) / (st.gapEnd - st.gapStart)) * 100)}%`;
-      if (now >= st.gapEnd) afterGap();
+      markSpeaking(k);
+      if (t >= st.stopAt) stop();
     } else if (st.mode === 'free') {
-      const i = segAt(st.player.getCurrentTime());
-      if (i !== st.idx) { setCurrent(i); renderStatus(); }
+      markSpeaking(k);
+      const gi = st.groups.findIndex((g) => k >= g.a && k < g.b);
+      if (gi >= 0 && gi !== st.g) setCurrent(gi);
     }
   }
-
   function onState(s) {
-    // 유튜브 화면을 직접 눌러 재생/정지한 경우 → 연속 재생 모드로
-    if (s === YS.PLAYING && (st.mode === 'idle' || st.mode === 'gap')) { st.mode = 'free'; renderStatus(); }
-    else if ((s === YS.PAUSED || s === YS.ENDED) && st.mode === 'free') { st.mode = 'idle'; renderStatus(); }
+    // 유튜브 화면을 직접 눌러 재생하면 연속 재생 모드 (현재 구간이 따라감)
+    if (s === YS.PLAYING && st.mode === 'idle') { st.mode = 'free'; renderStatus(); }
+    else if ((s === YS.PAUSED || s === YS.ENDED) && st.mode === 'free') { st.mode = 'idle'; markSpeaking(-1); renderStatus(); }
   }
 
-  /* --- 조작 --- */
+  /* --- 버튼 --- */
   $('.back').addEventListener('click', () => (history.length > 1 ? history.back() : (location.hash = '#/')));
   $('.main-btns').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b || !st.player) return;
     const act = b.dataset.act;
-    if (act === 'play') {
-      if (st.mode === 'idle') { playSegment(st.idx); watchFirstPlay(st.player); } else stop();
-    } else if (act === 'replay') playSegment(st.idx);
-    else if (act === 'prev') playSegment(Math.max(0, st.idx - 1));
-    else if (act === 'next') playSegment(Math.min(segs.length - 1, st.idx + 1));
+    if (act === 'play') play(st.g);
+    else if (act === 'stop') stop();
+    else if (act === 'prev') play(Math.max(0, st.g - 1));
+    else if (act === 'next') play(Math.min(st.groups.length - 1, st.g + 1));
     else if (act === 'done') {
-      const i = st.idx;
-      if (doneSet.has(i)) doneSet.delete(i); else doneSet.add(i);
-      prog.done = [...doneSet].sort((a, b) => a - b);
+      const g = st.groups[st.g];
+      const on = !groupDone(g);
+      for (let k = g.a; k < g.b; k++) on ? doneSet.add(k) : doneSet.delete(k);
+      prog.done = [...doneSet].sort((x, y) => x - y);
       save();
-      const row = rowEl(i);
-      row.classList.toggle('done', doneSet.has(i));
-      $('.num', row).textContent = doneSet.has(i) ? '✓' : i + 1;
-      toast(doneSet.has(i) ? `${i + 1}번 문장 외움 ✓` : '외움 표시 해제');
-      renderStatus();
+      const row = rowEl(st.g);
+      row.classList.toggle('done', on);
+      $('.num', row).textContent = on ? '✓' : st.g + 1;
+      toast(on ? `${st.g + 1}번 구간 외움 ✓` : '외움 표시 해제');
     }
   });
 
+  /* --- 탭 = 재생, 길게 누르기 = 단어 저장 --- */
+  let press = null, suppressClick = false;
+  segsEl.addEventListener('pointerdown', (e) => {
+    const w = e.target.closest('.w');
+    if (!w) return;
+    press = { x: e.clientX, y: e.clientY, w, timer: setTimeout(() => {
+      press = null;
+      suppressClick = true;
+      w.classList.add('sel');
+      setTimeout(() => w.classList.remove('sel'), 400);
+      const k = +w.closest('.sent').dataset.s;
+      openWordSheet(k, +w.dataset.w);
+    }, 480) };
+  });
+  const cancelPress = () => { if (press) { clearTimeout(press.timer); press = null; } };
+  segsEl.addEventListener('pointermove', (e) => {
+    if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) cancelPress();
+  });
+  segsEl.addEventListener('pointerup', cancelPress);
+  segsEl.addEventListener('pointercancel', cancelPress);
+  segsEl.addEventListener('contextmenu', (e) => e.preventDefault());
   segsEl.addEventListener('click', (e) => {
-    const playB = e.target.closest('[data-play]');
-    if (playB) { playSegment(+playB.dataset.play); watchFirstPlay(st.player); return; }
+    if (suppressClick) { suppressClick = false; return; }
     const row = e.target.closest('.seg');
     if (!row) return;
-    const i = +row.dataset.i;
-    if (S.hideEn && !row.classList.contains('peek')) { row.classList.add('peek'); return; }
-    const w = e.target.closest('.w');
-    if (w) openWordSheet(i, +w.dataset.w);
+    if (set.hideEn && !row.classList.contains('peek') && e.target.closest('.en')) { row.classList.add('peek'); return; }
+    play(+row.dataset.g);
   });
 
   /* --- 단어 시트 --- */
-  function openWordSheet(segIdx, wIdx) {
-    const seg = segs[segIdx];
-    const words = wordsOf(seg.text);
+  function openWordSheet(k, wIdx) {
+    const sent = S[k];
+    const words = wordsOf(sent.t);
     let a = wIdx, b = wIdx;
     const termOf = () => {
       let t = words.slice(a, b + 1).join(' ');
       if (a === b && t !== 'I' && !/^[A-Z]{2,}$/.test(t)) t = t.toLowerCase();
       return t.replace(/’/g, "'");
     };
-    const wasPlaying = st.mode !== 'idle';
-    if (wasPlaying) stop();
+    if (st.mode !== 'idle') stop();
 
     function draw() {
       const term = termOf();
@@ -520,13 +606,12 @@ async function viewTalk(id) {
           <button class="btn small" id="ext-r" ${b >= words.length - 1 ? 'disabled' : ''}>뒷 단어 포함 ▶</button>
           ${a !== b ? '<button class="btn small" id="ext-reset">한 단어로</button>' : ''}
         </div>
-        <div class="ctx">${highlightCtx(seg.text, [a, b])}</div>
+        <div class="ctx">${highlightCtx(sent.t, [a, b])}</div>
         <label>뜻 / 메모</label>
         <textarea id="meaning" placeholder="예) 깜짝 놀라다, 감탄하다">${esc(existing?.meaning || '')}</textarea>
         <div class="row" style="margin-top:6px">
           <a class="btn small" target="_blank" rel="noopener" href="https://en.dict.naver.com/#/search?query=${encodeURIComponent(term)}">네이버 사전</a>
           <a class="btn small" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent(term + ' meaning')}">구글 검색</a>
-          <button class="btn small" id="clip">▶ 이 구간 듣기</button>
         </div>
         <label>영영 사전</label>
         <div class="defs" id="defs">찾는 중…</div>
@@ -542,18 +627,17 @@ async function viewTalk(id) {
         $('#ipa').textContent = d?.phon || '';
         $('#defs').innerHTML = d?.defs.length
           ? d.defs.map((x) => `<p><em>${esc(x.pos)}</em>${esc(x.def)}</p>`).join('')
-          : '사전 결과가 없습니다 (구/숙어는 네이버 사전을 이용하세요)';
+          : '사전 결과가 없습니다 (네이버 사전을 이용하세요)';
       });
 
       $('#say').onclick = () => speak(term);
       $('#ext-l').onclick = () => { a--; draw(); };
       $('#ext-r').onclick = () => { b++; draw(); };
       if ($('#ext-reset')) $('#ext-reset').onclick = () => { a = b = wIdx; draw(); };
-      $('#clip').onclick = () => { closeSheet(); playSegment(segIdx); };
       if ($('#cancel')) $('#cancel').onclick = closeSheet;
       if ($('#del')) $('#del').onclick = () => {
         store.cards = store.cards.filter((c) => c !== existing);
-        save(); closeSheet(); refreshRow(existing.talkId === id ? existing.seg : segIdx); refreshAllSingles();
+        save(); closeSheet(); refreshSaved();
         toast('삭제했습니다');
       };
       $('#save').onclick = () => {
@@ -565,44 +649,34 @@ async function viewTalk(id) {
           store.cards.push({
             id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
             text: term, meaning, def, phon: dict?.phon || '',
-            ctx: seg.text, ko: seg.ko || '', range: [a, b],
-            talkId: id, title: talk.title, seg: segIdx, start: seg.start, end: seg.end,
+            ctx: sent.t, ko: sent.ko || '', range: [a, b],
+            talkId: id, title: talk.title, sent: k, start: sent.s, end: sent.e,
             created: Date.now(), due: Date.now(), ivl: 0, ease: 2.5, reps: 0, lapses: 0,
           });
         }
-        save(); closeSheet();
-        a === b ? refreshAllSingles() : refreshRow(segIdx);
+        save(); closeSheet(); refreshSaved();
         toast(existing ? '수정했습니다' : `"${term}" 저장 ✓`);
       };
     }
     draw();
   }
-  function refreshRow(i) {
-    const old = rowEl(i);
-    const tmp = document.createElement('div');
-    tmp.innerHTML = rowHtml(segs[i], i);
-    const row = tmp.firstElementChild;
-    row.className = old.className;
-    old.replaceWith(row);
-  }
-  function refreshAllSingles() {
+  function refreshSaved() {
     const singles = savedSingles();
     $$('.w', segsEl).forEach((w) => {
-      const i = +w.closest('.seg').dataset.i;
-      const inRange = savedRanges(i).some(([a, b]) => +w.dataset.w >= a && +w.dataset.w <= b);
-      w.classList.toggle('saved', singles.has(norm(w.textContent)) || inRange);
+      const k = +w.closest('.sent').dataset.s;
+      const i = +w.dataset.w;
+      w.classList.toggle('saved', singles.has(norm(w.textContent)) || savedRanges(k).some(([a, b]) => i >= a && i <= b));
     });
   }
 
   /* --- 초기화 --- */
   const startAt = +(new URLSearchParams(location.hash.split('?')[1] || '').get('s') ?? NaN);
-  if (!Number.isNaN(startAt) && startAt >= 0 && startAt < segs.length) st.idx = startAt;
-  setCurrent(st.idx, false);
+  if (!Number.isNaN(startAt) && startAt >= 0 && startAt < S.length) prog.last = startAt;
+  renderChips();
+  regroup();
   renderStatus('플레이어 준비 중…');
-  requestAnimationFrame(() => scrollToRow(rowEl(st.idx)));
 
   try { st.wake = await navigator.wakeLock?.request('screen'); } catch {}
-
   cleanup = () => {
     st.alive = false;
     clearInterval(st.timer);
@@ -610,9 +684,9 @@ async function viewTalk(id) {
     st.wake?.release?.().catch(() => {});
   };
 
-  st.player = await makePlayer($('#yt'), id, { onState, vars: { start: Math.floor(segs[st.idx].start) } });
+  st.player = await makePlayer($('#yt'), id, { onState, vars: { start: Math.floor(S[st.groups[st.g].a].s) } });
   if (!st.alive) { try { st.player.destroy(); } catch {} return; }
-  st.player.setPlaybackRate(S.rate);
+  st.player.setPlaybackRate(set.rate);
   st.timer = setInterval(tick, 50);
   renderStatus();
 }
@@ -678,7 +752,7 @@ function editCard(c, onDone) {
     <textarea id="meaning">${esc(c.meaning || '')}</textarea>
     ${c.def ? `<label>영영 사전</label><div class="defs">${esc(c.def).replace(/\n/g, '<br>')}</div>` : ''}
     <div class="row" style="margin-top:12px">
-      <a class="btn small" href="#/talk/${encodeURIComponent(c.talkId)}?s=${c.seg}">▶ 강연에서 보기</a>
+      <a class="btn small" href="#/talk/${encodeURIComponent(c.talkId)}?s=${c.sent ?? 0}">▶ 강연에서 보기</a>
       <a class="btn small" target="_blank" rel="noopener" href="https://en.dict.naver.com/#/search?query=${encodeURIComponent(c.text)}">네이버 사전</a>
     </div>
     <div class="actions">
