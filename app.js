@@ -132,6 +132,7 @@ async function play(k) {
   await attach(m, mediaUrl());
   const c = chunks[ci];
   target = { s: S[c.a].s, e: S[c.b - 1].e, ci };
+  countEncounters();
   clearTimeout(stopTimer);
   setMetadata();
   applyRate(m);
@@ -250,30 +251,150 @@ function build() {
   let html = '';
   S.forEach((x, i) => {
     if (i && paras.has(i)) html += `<div class="para-gap" data-before="${i}"></div>`;
-    const words = x.t.trim().split(/\s+/).map((w) => `<span class="w">${esc(w)}</span>`).join(' ');
+    const words = x.t.trim().split(/\s+/).map((w, k) => `<span class="w" data-k="${k}">${esc(w)}</span>`).join(' ');
     html += `<button type="button" class="sent" data-i="${i}">${words}<span class="ko">${esc(x.ko || '')}</span></button>`;
   });
   list.innerHTML = html;
   $('talkTitle').textContent = talk.title;
   $('talkSub').textContent = [talk.speaker, talk.title_ko].filter(Boolean).join(' · ');
+  decorate();
 }
+
+// ---------- 누르기: 짧게 = 구간 재생(저장한 단어는 뜻 창), 길게 = 뜻 창, 가린 지금 구간 = 누르는 동안 영어 보기 ----------
+const LONG_PRESS = 450;
+let press = null;       // {timer, x, y, done}
+const hiddenNow = (i) => hideEn && chunkOf(i) === ci;
+list.addEventListener('pointerdown', (ev) => {
+  const b = ev.target.closest('.sent');
+  if (!b) return;
+  const i = +b.dataset.i;
+  if (hiddenNow(i)) { peeking = true; list.classList.add('reveal'); return; }
+  const w = ev.target.closest('.w');
+  if (!w) return;
+  press = { x: ev.clientX, y: ev.clientY, done: false };
+  press.timer = setTimeout(() => { press.done = true; openWord(i, +w.dataset.k); }, LONG_PRESS);
+});
+list.addEventListener('pointermove', (ev) => {
+  if (press && !press.done && Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 10) { clearTimeout(press.timer); press = null; }
+});
+function endPress() {
+  if (peeking) { peeking = false; list.classList.remove('reveal'); }
+  if (press && !press.done) { clearTimeout(press.timer); press = null; }
+}
+for (const type of ['pointerup', 'pointercancel', 'pointerleave']) list.addEventListener(type, endPress);
 list.addEventListener('click', (ev) => {
   const b = ev.target.closest('.sent');
   if (!b) return;
-  const k = chunkOf(+b.dataset.i);
-  if (hideEn && k === ci) return;   // 가린 구간은 누르는 동안 보기만 (재생은 큰 버튼)
-  play(k);
+  const i = +b.dataset.i;
+  if (press && press.done) { press = null; return; }   // 길게 눌러 뜻 창을 연 뒤의 클릭은 무시
+  if (hiddenNow(i)) return;                            // 가린 구간은 누르는 동안 보기만 (재생은 큰 버튼)
+  const w = ev.target.closest('.w.saved');
+  if (w) { openWord(i, +w.dataset.k); return; }        // 저장한 단어는 짧게 눌러도 뜻 창
+  play(chunkOf(i));
 });
-// 영어를 가린 상태에서 지금 구간을 누르고 있는 동안만 영어를 보여 주고, 손을 떼면 다시 가린다
-list.addEventListener('pointerdown', (ev) => {
-  const b = ev.target.closest('.sent');
-  if (!hideEn || !b || chunkOf(+b.dataset.i) !== ci) return;
-  peeking = true;
-  list.classList.add('reveal');
+list.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
+// ---------- F6 단어장 ----------
+// 저장: { 기본형: { lex: 단어 뜻, memo, added, met: 만난 횟수, uses: { 형태: {mean, n} }, seen: { 날짜: [구간 키...] } } }
+const WORDS = 'shadowing.words';
+let book = {};
+function loadBook() { try { book = JSON.parse(localStorage.getItem(WORDS) || '{}'); } catch (e) { book = {}; } }
+function saveBook() { try { localStorage.setItem(WORDS, JSON.stringify(book)); } catch (e) { toast('단어장을 저장하지 못했습니다'); } }
+const today = () => new Date().toISOString().slice(0, 10);
+const bare = (t) => t.replace(/^["“‘(]+/, '').replace(/["”’).,!?;:]+$/, '');
+
+// 문장 i의 단어 k: 기본형, 이 문장에서의 뜻, 묶음, 형태(묶음이면 묶음, 아니면 단어 그대로)
+function wordAt(i, k) {
+  const x = S[i];
+  const tok = bare(x.t.split(/\s+/)[k]);
+  const g = (x.g || [])[k];
+  const combo = (x.c || []).find((c) => c[0].includes(k));
+  return { tok, lemma: g ? g[0] : tok.toLowerCase(), mean: g ? g[1] : '', combo, form: combo ? combo[1] : tok.toLowerCase() };
+}
+// 저장한 단어에 밑줄 (묶여 나오면 묶인 단어까지)
+function decorate() {
+  list.querySelectorAll('.w.saved').forEach((el) => el.classList.remove('saved'));
+  const items = list.querySelectorAll('.sent');
+  S.forEach((x, i) => {
+    (x.g || []).forEach((g, k) => {
+      if (!g || !book[g[0]]) return;
+      const ws = items[i].querySelectorAll('.w');
+      if (ws[k]) ws[k].classList.add('saved');
+      for (const c of x.c || []) if (c[0].includes(k)) c[0].forEach((j) => ws[j] && ws[j].classList.add('saved'));
+    });
+  });
+  $('bookBtn').textContent = `단어장 (${Object.keys(book).length}개)`;
+}
+// 구간을 재생할 때 그 안의 저장 단어를 '만났다'고 센다 (같은 날 같은 구간은 1번)
+function countEncounters() {
+  const c = chunks[ci], key = `${talk.id}:${c.a}`, day = today();
+  let changed = false;
+  for (let i = c.a; i < c.b; i++) {
+    (S[i].g || []).forEach((g, k) => {
+      const e = g && book[g[0]];
+      if (!e) return;
+      if (!e.seen || !e.seen[day]) e.seen = { [day]: [] };
+      if (e.seen[day].includes(key)) return;
+      e.seen[day].push(key);
+      const w = wordAt(i, k);
+      e.met = (e.met || 0) + 1;
+      e.uses = e.uses || {};
+      e.uses[w.form] = { mean: w.combo ? w.combo[2] : w.mean, n: ((e.uses[w.form] || {}).n || 0) + 1 };
+      changed = true;
+    });
+  }
+  if (changed) saveBook();
+}
+
+// 뜻 창: i = 문장 번호(단어장 목록에서 열면 null), k = 단어 번호(목록에서는 기본형)
+function openWord(i, k) {
+  const w = i === null ? null : wordAt(i, k);
+  const lemma = w ? w.lemma : k;
+  const e = book[lemma];
+  const lex = (talk.lex || {})[lemma] || (e && e.lex) || '';
+  const here = w ? `<div class="sec"><span>이 문장에서</span><div class="here"><b>${esc(w.combo ? w.combo[1] : w.tok)}</b><div>${esc((w.combo ? w.combo[2] : w.mean) || '뜻 정보 없음')}</div></div></div>` : '';
+  const uses = e && e.uses ? Object.entries(e.uses).sort((a, b) => b[1].n - a[1].n)
+    .map(([u, v]) => `<li><span><b>${esc(u)}</b> — ${esc(v.mean || '')}</span><em>${v.n}번</em></li>`).join('') : '';
+  $('wordCard').innerHTML = `
+    <h2>${esc(lemma)}</h2>
+    ${here}
+    ${lex ? `<div class="sec"><span>단어 뜻</span><div class="mean">${esc(lex)}</div></div>` : ''}
+    ${uses ? `<div class="sec"><span>지금까지 만난 쓰임</span><ul class="uses">${uses}</ul></div>` : ''}
+    ${w ? `<div class="ctx">${esc(S[i].t)}</div>` : ''}
+    ${e ? `<label class="sec"><span>내 메모</span><textarea id="memo" rows="2" placeholder="눌러서 적기">${esc(e.memo || '')}</textarea></label>
+      <div class="meta">만난 횟수 ${e.met || 0}회</div>` : ''}
+    <button type="button" id="wordAct" class="word-act${e ? ' remove' : ''}">${e ? '단어장에서 지우기' : '단어장에 저장'}</button>`;
+  const memo = $('memo');
+  if (memo) memo.addEventListener('input', () => { book[lemma].memo = memo.value; saveBook(); });
+  $('wordAct').addEventListener('click', () => {
+    if (book[lemma]) {
+      delete book[lemma];
+      toast(`${lemma} 지움`);
+    } else {
+      book[lemma] = { lex, memo: '', added: Date.now(), met: 1, seen: { [today()]: [`${talk.id}:${chunks[chunkOf(i)].a}`] },
+        uses: { [w.form]: { mean: w.combo ? w.combo[2] : w.mean, n: 1 } } };
+      toast(`${lemma} 저장`);
+    }
+    saveBook(); decorate(); renderBook();
+    $('wordSheet').hidden = true;
+  });
+  $('wordSheet').hidden = false;
+}
+$('wordSheet').addEventListener('click', (ev) => { if (ev.target === $('wordSheet')) $('wordSheet').hidden = true; });
+
+// 단어장 화면: 최근 저장 순
+function renderBook() {
+  const rows = Object.entries(book).sort((a, b) => (b[1].added || 0) - (a[1].added || 0));
+  $('bookList').innerHTML = rows.length ? rows.map(([l, e]) =>
+    `<li><button type="button" data-l="${esc(l)}"><b>${esc(l)}</b><span>${esc(e.lex || '')}</span><em>${e.met || 0}회</em></button></li>`).join('')
+    : '<li class="empty">아직 저장한 단어가 없습니다. 스크립트의 단어를 길게 누르면 뜻을 보고 저장할 수 있습니다.</li>';
+}
+$('bookBtn').addEventListener('click', () => { renderBook(); $('sheet').hidden = true; $('book').hidden = false; });
+$('bookClose').addEventListener('click', () => { $('book').hidden = true; });
+$('bookList').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-l]');
+  if (b) openWord(null, b.dataset.l);
 });
-const endPeek = () => { if (peeking) { peeking = false; list.classList.remove('reveal'); } };
-for (const type of ['pointerup', 'pointercancel', 'pointerleave']) list.addEventListener(type, endPeek);
-list.addEventListener('contextmenu', (ev) => { if (hideEn) ev.preventDefault(); });
 
 let marked = null;      // 표시 중인 구간 {a, b}
 function mark(instant) {
@@ -366,7 +487,7 @@ $('speedBtn').addEventListener('click', () => {
 
 $('hideT').addEventListener('click', () => {
   hideEn = !hideEn;
-  endPeek();
+  endPress();
   applyToggles(); save();
 });
 $('sheet').addEventListener('click', (ev) => { if (ev.target === $('sheet')) $('sheet').hidden = true; });
@@ -402,6 +523,7 @@ function toast(text) {
 // ---------- 시작 ----------
 async function start() {
   const st = load();
+  loadBook();
   showKo = st.showKo !== false;
   showVideo = st.showVideo === true;
   hideEn = st.hideEn === true;

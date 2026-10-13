@@ -49,11 +49,23 @@
   <div class="sheet-body">
     <p class="sheet-label">구간 단위</p>
     <div class="units" id="units"></div>
+    <button id="bookBtn" type="button" class="book-btn">단어장 (0개)</button>
     <div class="sheet-row">
       <div><b>영어 가리기</b><span>지금 구간의 영어를 막대로 가립니다. 누르면 보입니다.</span></div>
       <button id="hideT" type="button" class="toggle" aria-pressed="false">가리기</button>
     </div>
   </div>
+</div>
+
+<!-- F6 뜻 창 -->
+<div class="sheet" id="wordSheet" hidden>
+  <div class="sheet-body card" id="wordCard"></div>
+</div>
+
+<!-- F6 단어장 화면 -->
+<div class="book" id="book" hidden>
+  <div class="book-head"><b>단어장</b><button id="bookClose" type="button" class="toggle">닫기</button></div>
+  <ul class="book-list" id="bookList"></ul>
 </div>
 
 <script src="app.js"></script>
@@ -65,7 +77,13 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (hadController && !reloaded) { reloaded = true; location.reload(); }
   });
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    if (reg.waiting) reg.waiting.postMessage('skip');
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      if (w) w.addEventListener('statechange', () => { if (w.state === 'installed') w.postMessage('skip'); });
+    });
+  }).catch(() => {});
 }
 </script>
 </body>
