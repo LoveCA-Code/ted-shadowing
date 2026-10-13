@@ -412,15 +412,15 @@ function decorate() {
 }
 // 구간을 재생할 때 그 안의 저장 단어를 '만났다'고 센다 (같은 날 같은 구간은 1번)
 function countEncounters() {
-  const c = chunks[ci], key = `${talk.id}:${c.a}`, day = today();
+  const c = chunks[ci], where = `${talk.id}:${c.a}`, day = today();
   let changed = false;
   for (let i = c.a; i < c.b; i++) {
     (S[i].g || []).forEach((g, k) => {
       const e = g && book[key(g[0])];
       if (!e) return;
       if (!e.seen || !e.seen[day]) e.seen = { [day]: [] };
-      if (e.seen[day].includes(key)) return;
-      e.seen[day].push(key);
+      if (e.seen[day].includes(where)) return;
+      e.seen[day].push(where);
       const w = wordAt(i, k);
       e.met = (e.met || 0) + 1;
       e.uses = e.uses || {};
