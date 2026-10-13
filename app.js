@@ -543,13 +543,14 @@ const speedLabel = (wpm) => (!wpm ? '' : wpm < 150 ? '느림' : wpm <= 175 ? '�
 function talkRow(t, st) {
   const p = (st.prog || {})[t.id];
   const prog = p ? `${p.n}/${p.of} 구간 (${p.unit})` : '처음';
-  const meta = [t.speaker, t.duration ? `${Math.round(t.duration / 60)}분` : '', speedLabel(t.wpm)].filter(Boolean).join(' · ');
+  const meta = [t.speaker, t.duration ? `${Math.round(t.duration / 60)}분` : '', `${t.sentences}문장`, speedLabel(t.wpm)].filter(Boolean).join(' · ');
+  const img = t.thumb ? `<img src="${esc(t.thumb)}" alt="" loading="lazy">` : '<i class="noimg"></i>';
   return `<li><button type="button" data-id="${esc(t.id)}"${talk && t.id === talk.id ? ' class="now"' : ''}>
-    <b>${esc(t.title)}</b><span>${esc(meta)}</span><em>${esc(prog)}</em></button></li>`;
+    ${img}<b>${esc(t.title)}</b><span>${esc(meta)}</span><em>${esc(prog)}</em></button></li>`;
 }
 function renderTalks() {
   const st = load();
-  const recent = (st.recent || []).map((id) => index.find((t) => t.id === id)).filter(Boolean).slice(0, 3);
+  const recent = (st.recent || []).map((id) => index.find((t) => t.id === id)).filter(Boolean).slice(0, 1);   // 최근 본 강연 1개
   let html = recent.length ? `<li class="group">이어 듣기</li>${recent.map((t) => talkRow(t, st)).join('')}` : '';
   for (const c of CATEGORIES) {
     const ts = index.filter((t) => (t.category || '기타') === c);
@@ -615,5 +616,8 @@ async function start() {
   if (!id) { $('talkTitle').textContent = '강연이 없습니다'; return; }
   await loadTalk(id);
   requestAnimationFrame(frame);
+  // 첫 화면은 강연 고르기 (닫으면 마지막으로 보던 강연)
+  renderTalks();
+  $('talks').hidden = false;
 }
 start();

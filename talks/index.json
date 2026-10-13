@@ -7,7 +7,8 @@
   "duration": 549,
   "sentences": 85,
   "category": "AI·마케팅",
-  "wpm": 142
+  "wpm": 142,
+  "thumb": "https://pi.tedcdn.com/r/talkstar-assets.s3.amazonaws.com/production/talks/talk_142494/3a0b400a-662c-4ed4-80c9-cf131d08c8b9/AmaryllisLiampoti_2024S-1350x675.jpg?w=160"
  },
  {
   "id": "chris_anderson_ted_s_secret_to_great_public_speaking",
@@ -17,7 +18,8 @@
   "duration": 466,
   "sentences": 83,
   "category": "발표·말하기",
-  "wpm": 159
+  "wpm": 159,
+  "thumb": "https://pi.tedcdn.com/r/talkstar-photos.s3.amazonaws.com/uploads/c6388df7-5fae-4d3f-85a9-ef5680edc7d4/ChrisAnderson_GreatTEDTalk_2016V-stageshot.jpg?w=160"
  },
  {
   "id": "david_mccandless_the_beauty_of_data_visualization",
@@ -27,7 +29,8 @@
   "duration": 1080,
   "sentences": 223,
   "category": "데이터",
-  "wpm": 166
+  "wpm": 166,
+  "thumb": "https://pi.tedcdn.com/r/pe.tedcdn.com/images/ted/192641_800x600.jpg?w=160"
  },
  {
   "id": "jessica_apotheker_what_will_happen_to_marketing_in_the_age_of_ai",
@@ -37,7 +40,8 @@
   "duration": 643,
   "sentences": 103,
   "category": "AI·마케팅",
-  "wpm": 147
+  "wpm": 147,
+  "thumb": "https://pi.tedcdn.com/r/talkstar-photos.s3.amazonaws.com/uploads/4d862a73-3e08-4f51-90ee-ab6a9c62b19a/JessicaApotheker_2023S-1350x675.jpg?w=160"
  },
  {
   "id": "julian_treasure_how_to_speak_so_that_people_want_to_listen",
@@ -47,7 +51,8 @@
   "duration": 584,
   "sentences": 149,
   "category": "발표·말하기",
-  "wpm": 170
+  "wpm": 170,
+  "thumb": "https://pi.tedcdn.com/r/talkstar-photos.s3.amazonaws.com/uploads/4899f77f-db56-4d7d-b80f-416c7832d533/JulianTreasure_2013U-stageshot.jpg?w=160"
  },
  {
   "id": "malcolm_gladwell_choice_happiness_and_spaghetti_sauce",
@@ -57,7 +62,8 @@
   "duration": 1036,
   "sentences": 213,
   "category": "소비자 심리",
-  "wpm": 176
+  "wpm": 176,
+  "thumb": "https://pi.tedcdn.com/r/pe.tedcdn.com/images/ted/59f16780eac3dbf9405fa40983cd425d538a2525_2400x1800.jpg?w=160"
  },
  {
   "id": "nancy_duarte_the_secret_structure_of_great_talks",
@@ -67,7 +73,8 @@
   "duration": 1080,
   "sentences": 254,
   "category": "발표·말하기",
-  "wpm": 212
+  "wpm": 212,
+  "thumb": "https://pi.tedcdn.com/r/talkstar-photos.s3.amazonaws.com/uploads/dbf3e62a-bf51-4a30-8aae-36085e3a21d1/NancyDuarte_2011X-1350x675.jpg?w=160"
  },
  {
   "id": "rory_sutherland_life_lessons_from_an_ad_man",
@@ -77,7 +84,8 @@
   "duration": 982,
   "sentences": 202,
   "category": "마케팅·브랜딩",
-  "wpm": 183
+  "wpm": 183,
+  "thumb": "https://pi.tedcdn.com/r/pe.tedcdn.com/images/ted/121597_800x600.jpg?w=160"
  },
  {
   "id": "seth_godin_how_to_get_your_ideas_to_spread",
@@ -87,7 +95,8 @@
   "duration": 1007,
   "sentences": 197,
   "category": "마케팅·브랜딩",
-  "wpm": 181
+  "wpm": 181,
+  "thumb": "https://pi.tedcdn.com/r/talkstar-photos.s3.amazonaws.com/uploads/44d5451b-2b6c-4116-b2b5-76b88f895979/SethGodin_2003-stageshot.jpg?w=160"
  },
  {
   "id": "sheena_iyengar_how_to_make_choosing_easier",
@@ -97,7 +106,8 @@
   "duration": 948,
   "sentences": 149,
   "category": "소비자 심리",
-  "wpm": 166
+  "wpm": 166,
+  "thumb": "https://pi.tedcdn.com/r/talkstar-photos.s3.amazonaws.com/uploads/19c246bc-1d06-47cf-ad50-18dd02d342a4/SheenaIyengar_2011S-stageshot.jpg?w=160"
  },
  {
   "id": "simon_sinek_how_great_leaders_inspire_action",
@@ -107,6 +117,7 @@
   "duration": 1067,
   "sentences": 218,
   "category": "마케팅·브랜딩",
-  "wpm": 169
+  "wpm": 169,
+  "thumb": "https://pi.tedcdn.com/r/pe.tedcdn.com/images/ted/8d116f6ed73143154a5f8fd240fa4ab6fd52b1cb_2400x1800.jpg?w=160"
  }
 ]
