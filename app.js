@@ -55,6 +55,8 @@ function save() {
     st.talk = talk && talk.id;
     // 위치는 구간 첫 문장 번호로 기억 (단위를 바꿔도 같은 곳에서 이어지게)
     st.pos = Object.assign(st.pos || {}, talk && chunks[ci] ? { [talk.id]: chunks[ci].a } : {});
+    // 목록 화면용 진도: 마지막 구간 번호 / 구간 수 (그때 단위 기준)
+    if (talk && chunks[ci]) st.prog = Object.assign(st.prog || {}, { [talk.id]: { n: ci + 1, of: chunks.length, unit: unit.label } });
     localStorage.setItem(STORE, JSON.stringify(st));
   } catch (e) {}
 }
@@ -114,9 +116,11 @@ async function attach(el, url) {
   attached.set(el, url);
   if (nativeHls) { el.src = url; el.preload = 'auto'; return; }
   await loadHlsJs();
+  if (el._hls) el._hls.destroy();
   const hls = new window.Hls();
   hls.loadSource(url);
   hls.attachMedia(el);
+  el._hls = hls;
 }
 const media = () => (showVideo ? video : audio);
 function mediaUrl() { return showVideo ? talk.video.hls : talk.audio.hls; }
@@ -532,6 +536,63 @@ function toast(text) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 1600);
 }
 
+// ---------- F7 강연 목록 ----------
+const CATEGORIES = ['발표·말하기', '마케팅·브랜딩', '소비자 심리', '데이터', 'AI·마케팅', '기타'];
+let index = [];
+const speedLabel = (wpm) => (!wpm ? '' : wpm < 150 ? '느림' : wpm <= 175 ? '보통' : '빠름');
+function talkRow(t, st) {
+  const p = (st.prog || {})[t.id];
+  const prog = p ? `${p.n}/${p.of} 구간 (${p.unit})` : '처음';
+  const meta = [t.speaker, t.duration ? `${Math.round(t.duration / 60)}분` : '', speedLabel(t.wpm)].filter(Boolean).join(' · ');
+  return `<li><button type="button" data-id="${esc(t.id)}"${talk && t.id === talk.id ? ' class="now"' : ''}>
+    <b>${esc(t.title)}</b><span>${esc(meta)}</span><em>${esc(prog)}</em></button></li>`;
+}
+function renderTalks() {
+  const st = load();
+  const recent = (st.recent || []).map((id) => index.find((t) => t.id === id)).filter(Boolean).slice(0, 3);
+  let html = recent.length ? `<li class="group">이어 듣기</li>${recent.map((t) => talkRow(t, st)).join('')}` : '';
+  for (const c of CATEGORIES) {
+    const ts = index.filter((t) => (t.category || '기타') === c);
+    if (ts.length) html += `<li class="group">${esc(c)}</li>${ts.map((t) => talkRow(t, st)).join('')}`;
+  }
+  $('talkList').innerHTML = html;
+}
+$('talkInfo').addEventListener('click', () => { renderTalks(); $('talks').hidden = false; });
+$('talksClose').addEventListener('click', () => { $('talks').hidden = true; });
+$('talkList').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('button[data-id]');
+  if (!b) return;
+  $('talks').hidden = true;
+  if (!talk || b.dataset.id !== talk.id) await loadTalk(b.dataset.id);
+});
+
+// 강연 하나를 불러와 화면을 만든다 (그 강연에서 마지막으로 듣던 구간부터)
+async function loadTalk(id) {
+  audio.pause(); video.pause(); target = null; clearTimeout(stopTimer);
+  $('talkTitle').textContent = '불러오는 중…';
+  try {
+    // 강연 데이터는 매번 서버에서 확인 (휴대폰에 남은 예전 데이터와 새 앱이 섞이지 않게)
+    talk = await (await fetch(`talks/${id}.json`, { cache: 'no-cache' })).json();
+  } catch (e) {
+    $('talkTitle').textContent = '강연을 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.';
+    return;
+  }
+  const st = load();
+  st.recent = [id, ...(st.recent || []).filter((x) => x !== id)].slice(0, 10);
+  try { localStorage.setItem(STORE, JSON.stringify(st)); } catch (e) {}
+  S = talk.sentences;
+  chunks = buildChunks();
+  const pos = (st.pos || {})[talk.id];
+  ci = chunkOf(pos >= 0 && pos < S.length ? pos : 0);
+  marked = null; prevSaid();
+  build();
+  mark(true);
+  // 오디오는 미리 연결해 둔다. 영상은 아이폰이 누르기 전에 연결하면 위치 이동이 꼬이므로 첫 재생 때 연결한다.
+  if (!showVideo) attach(audio, talk.audio.hls);
+  save();
+}
+function prevSaid() { said = -1; speaking = -1; wordEls = []; }
+
 // ---------- 시작 ----------
 async function start() {
   const st = load();
@@ -545,24 +606,14 @@ async function start() {
   unit = UNITS.find((u) => u.id === st.unit) || UNITS[0];
   applyToggles();
   try {
-    const index = await (await fetch('talks/index.json', { cache: 'no-cache' })).json();
-    const id = (index.find((t) => t.id === st.talk) || index[0] || {}).id;
-    if (!id) { $('talkTitle').textContent = '강연이 없습니다'; return; }
-    // 강연 데이터는 매번 서버에서 확인 (휴대폰에 남은 예전 데이터와 새 앱이 섞이지 않게)
-    talk = await (await fetch(`talks/${id}.json`, { cache: 'no-cache' })).json();
+    index = await (await fetch('talks/index.json', { cache: 'no-cache' })).json();
   } catch (e) {
     $('talkTitle').textContent = '강연을 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.';
     return;
   }
-  S = talk.sentences;
-  chunks = buildChunks();
-  const pos = (st.pos || {})[talk.id];
-  ci = chunkOf(pos >= 0 && pos < S.length ? pos : 0);
-  build();
-  mark(true);
-  // 오디오는 미리 연결해 둔다. 영상은 아이폰이 누르기 전에 연결하면 위치 이동이 꼬이므로 첫 재생 때 연결한다.
-  if (!showVideo) attach(audio, talk.audio.hls);
-  save();
+  const id = (index.find((t) => t.id === st.talk) || index[0] || {}).id;
+  if (!id) { $('talkTitle').textContent = '강연이 없습니다'; return; }
+  await loadTalk(id);
   requestAnimationFrame(frame);
 }
 start();

@@ -21,7 +21,7 @@
 </head>
 <body>
 <header class="top">
-  <div class="talk"><b id="talkTitle">불러오는 중…</b><span id="talkSub"></span></div>
+  <button type="button" class="talk" id="talkInfo" aria-label="강연 목록 열기"><b id="talkTitle">불러오는 중…</b><span id="talkSub"></span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
   <button id="unitBtn" type="button" class="toggle unit-btn" aria-label="구간 단위 바꾸기">문장</button>
   <button id="videoT" type="button" class="toggle" aria-pressed="false">Video</button>
   <button id="koT" type="button" class="toggle" aria-pressed="true">Translate</button>
@@ -60,6 +60,12 @@
 <!-- F6 뜻 창 -->
 <div class="sheet" id="wordSheet" hidden>
   <div class="sheet-body card" id="wordCard"></div>
+</div>
+
+<!-- F7 강연 목록 -->
+<div class="book" id="talks" hidden>
+  <div class="book-head"><b>강연</b><button id="talksClose" type="button" class="toggle">닫기</button></div>
+  <ul class="book-list talk-list" id="talkList"></ul>
 </div>
 
 <!-- F6 단어장 화면 -->

@@ -5,7 +5,9 @@
   "title_ko": "AI 시대에서의 사랑과 신뢰, 마케팅",
   "speaker": "Amaryllis Liampoti",
   "duration": 549,
-  "sentences": 85
+  "sentences": 85,
+  "category": "AI·마케팅",
+  "wpm": 142
  },
  {
   "id": "chris_anderson_ted_s_secret_to_great_public_speaking",
@@ -13,7 +15,9 @@
   "title_ko": "훌륭한 강연을 위한 TED의 비법",
   "speaker": "Chris Anderson",
   "duration": 466,
-  "sentences": 83
+  "sentences": 83,
+  "category": "발표·말하기",
+  "wpm": 159
  },
  {
   "id": "david_mccandless_the_beauty_of_data_visualization",
@@ -21,7 +25,9 @@
   "title_ko": "데이비드 맥칸들리스: 정보 시각화의 아름다움",
   "speaker": "David McCandless",
   "duration": 1080,
-  "sentences": 223
+  "sentences": 223,
+  "category": "데이터",
+  "wpm": 166
  },
  {
   "id": "jessica_apotheker_what_will_happen_to_marketing_in_the_age_of_ai",
@@ -29,7 +35,9 @@
   "title_ko": "AI 시대에 마케팅은 어떻게 변화할 것인가",
   "speaker": "Jessica Apotheker",
   "duration": 643,
-  "sentences": 103
+  "sentences": 103,
+  "category": "AI·마케팅",
+  "wpm": 147
  },
  {
   "id": "julian_treasure_how_to_speak_so_that_people_want_to_listen",
@@ -37,7 +45,9 @@
   "title_ko": "사람들이 듣고 싶어하게 말하는 법",
   "speaker": "Julian Treasure",
   "duration": 584,
-  "sentences": 149
+  "sentences": 149,
+  "category": "발표·말하기",
+  "wpm": 170
  },
  {
   "id": "malcolm_gladwell_choice_happiness_and_spaghetti_sauce",
@@ -45,7 +55,9 @@
   "title_ko": "말콤 글래드웰, 스파게티 소스에 관하여",
   "speaker": "Malcolm Gladwell",
   "duration": 1036,
-  "sentences": 213
+  "sentences": 213,
+  "category": "소비자 심리",
+  "wpm": 176
  },
  {
   "id": "nancy_duarte_the_secret_structure_of_great_talks",
@@ -53,7 +65,9 @@
   "title_ko": "위대한 연설의 비밀",
   "speaker": "Nancy Duarte",
   "duration": 1080,
-  "sentences": 254
+  "sentences": 254,
+  "category": "발표·말하기",
+  "wpm": 212
  },
  {
   "id": "rory_sutherland_life_lessons_from_an_ad_man",
@@ -61,7 +75,9 @@
   "title_ko": "로리 서덜랜드: 광고쟁이의 인생 교훈",
   "speaker": "Rory Sutherland",
   "duration": 982,
-  "sentences": 202
+  "sentences": 202,
+  "category": "마케팅·브랜딩",
+  "wpm": 183
  },
  {
   "id": "seth_godin_how_to_get_your_ideas_to_spread",
@@ -69,7 +85,9 @@
   "title_ko": "\"돋보임\"에 관하여",
   "speaker": "Seth Godin",
   "duration": 1007,
-  "sentences": 197
+  "sentences": 197,
+  "category": "마케팅·브랜딩",
+  "wpm": 181
  },
  {
   "id": "sheena_iyengar_how_to_make_choosing_easier",
@@ -77,7 +95,9 @@
   "title_ko": "쉬나 아엥가: 선택을 쉽게 만드는 방법",
   "speaker": "Sheena Iyengar",
   "duration": 948,
-  "sentences": 149
+  "sentences": 149,
+  "category": "소비자 심리",
+  "wpm": 166
  },
  {
   "id": "simon_sinek_how_great_leaders_inspire_action",
@@ -85,6 +105,8 @@
   "title_ko": "위대한 리더들이 행동을 이끌어내는 법",
   "speaker": "Simon Sinek",
   "duration": 1067,
-  "sentences": 218
+  "sentences": 218,
+  "category": "마케팅·브랜딩",
+  "wpm": 169
  }
 ]
