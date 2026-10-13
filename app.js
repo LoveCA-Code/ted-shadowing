@@ -298,7 +298,19 @@ list.addEventListener('contextmenu', (ev) => ev.preventDefault());
 // 저장: { 기본형: { lex: 단어 뜻, memo, added, met: 만난 횟수, uses: { 형태: {mean, n} }, seen: { 날짜: [구간 키...] } } }
 const WORDS = 'shadowing.words';
 let book = {};
-function loadBook() { try { book = JSON.parse(localStorage.getItem(WORDS) || '{}'); } catch (e) { book = {}; } }
+// 단어장 열쇠는 소문자 기본형 (강연마다 New/new처럼 대소문자가 달라도 같은 단어로)
+const key = (lemma) => lemma.toLowerCase();
+function loadBook() {
+  try { book = JSON.parse(localStorage.getItem(WORDS) || '{}'); } catch (e) { book = {}; }
+  for (const l of Object.keys(book)) if (l !== key(l)) { book[key(l)] = book[key(l)] || book[l]; delete book[l]; }
+}
+// 사전 뜻: 이 강연 → 다른 대소문자 → 저장할 때 적어 둔 뜻
+function lexOf(lemma) {
+  const lex = talk.lex || {};
+  if (lex[lemma]) return lex[lemma];
+  const hit = Object.keys(lex).find((l) => key(l) === key(lemma));
+  return hit ? lex[hit] : (book[key(lemma)] || {}).lex || '';
+}
 function saveBook() { try { localStorage.setItem(WORDS, JSON.stringify(book)); } catch (e) { toast('단어장을 저장하지 못했습니다'); } }
 const today = () => new Date().toISOString().slice(0, 10);
 const bare = (t) => t.replace(/^["“‘(]+/, '').replace(/["”’).,!?;:]+$/, '');
@@ -309,7 +321,7 @@ function wordAt(i, k) {
   const tok = bare(x.t.split(/\s+/)[k]);
   const g = (x.g || [])[k];
   const combo = (x.c || []).find((c) => c[0].includes(k));
-  return { tok, lemma: g ? g[0] : tok.toLowerCase(), mean: g ? g[1] : '', combo, form: combo ? combo[1] : tok.toLowerCase() };
+  return { tok, lemma: key(g ? g[0] : tok), mean: g ? g[1] : '', combo, form: combo ? combo[1] : tok.toLowerCase() };
 }
 // 저장한 단어에 밑줄 (묶여 나오면 묶인 단어까지)
 function decorate() {
@@ -317,7 +329,7 @@ function decorate() {
   const items = list.querySelectorAll('.sent');
   S.forEach((x, i) => {
     (x.g || []).forEach((g, k) => {
-      if (!g || !book[g[0]]) return;
+      if (!g || !book[key(g[0])]) return;
       const ws = items[i].querySelectorAll('.w');
       if (ws[k]) ws[k].classList.add('saved');
       for (const c of x.c || []) if (c[0].includes(k)) c[0].forEach((j) => ws[j] && ws[j].classList.add('saved'));
@@ -331,7 +343,7 @@ function countEncounters() {
   let changed = false;
   for (let i = c.a; i < c.b; i++) {
     (S[i].g || []).forEach((g, k) => {
-      const e = g && book[g[0]];
+      const e = g && book[key(g[0])];
       if (!e) return;
       if (!e.seen || !e.seen[day]) e.seen = { [day]: [] };
       if (e.seen[day].includes(key)) return;
@@ -351,7 +363,7 @@ function openWord(i, k) {
   const w = i === null ? null : wordAt(i, k);
   const lemma = w ? w.lemma : k;
   const e = book[lemma];
-  const lex = (talk.lex || {})[lemma] || (e && e.lex) || '';
+  const lex = lexOf(lemma);
   const here = w ? `<div class="sec"><span>이 문장에서</span><div class="here"><b>${esc(w.combo ? w.combo[1] : w.tok)}</b><div>${esc((w.combo ? w.combo[2] : w.mean) || '뜻 정보 없음')}</div></div></div>` : '';
   const uses = e && e.uses ? Object.entries(e.uses).sort((a, b) => b[1].n - a[1].n)
     .map(([u, v]) => `<li><span><b>${esc(u)}</b> — ${esc(v.mean || '')}</span><em>${v.n}번</em></li>`).join('') : '';
