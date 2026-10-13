@@ -56,7 +56,7 @@ function save() {
     // 위치는 구간 첫 문장 번호로 기억 (단위를 바꿔도 같은 곳에서 이어지게)
     st.pos = Object.assign(st.pos || {}, talk && chunks[ci] ? { [talk.id]: chunks[ci].a } : {});
     // 목록 화면용 진도: 마지막 구간 번호 / 구간 수 (그때 단위 기준)
-    if (talk && chunks[ci]) st.prog = Object.assign(st.prog || {}, { [talk.id]: { n: ci + 1, of: chunks.length, unit: unit.label } });
+    if (talk && chunks[ci]) st.prog = Object.assign(st.prog || {}, { [talk.id]: whereNow() });
     localStorage.setItem(STORE, JSON.stringify(st));
   } catch (e) {}
 }
@@ -615,11 +615,24 @@ let index = [];
 const speedLabel = (wpm) => (!wpm ? '' : wpm < 150 ? '느림' : wpm <= 175 ? '보통' : '빠름');
 function talkRow(t, st) {
   const p = (st.prog || {})[t.id];
-  const prog = p ? `${p.n}/${p.of} 구간 (${p.unit})` : '처음';
+  const prog = p ? `${p.pct !== undefined ? p.pct + '%' : `${p.n}/${p.of}`}` : '처음';
+  const where = p && p.sec ? `<small style="--c: var(${roleColor(p.role)})"><i style="width:${p.pct}%"></i></small>`
+    + `<span class="where">${esc(p.sec)} · ${p.n}/${p.of} 구간 (${esc(p.unit)})</span>` : '';
   const meta = [t.speaker, t.duration ? `${Math.round(t.duration / 60)}분` : '', `${t.sentences}문장`, speedLabel(t.wpm)].filter(Boolean).join(' · ');
   const img = t.thumb ? `<img src="${esc(t.thumb)}" alt="" loading="lazy">` : '<i class="noimg"></i>';
   return `<li><button type="button" data-id="${esc(t.id)}"${talk && t.id === talk.id ? ' class="now"' : ''}>
-    ${img}<b>${esc(t.title)}</b><span>${esc(meta)}</span><em>${esc(prog)}</em></button></li>`;
+    ${img}<b>${esc(t.title)}</b><span>${esc(meta)}</span><em>${esc(prog)}</em>${where}</button></li>`;
+}
+// 목록에 보여 줄 '지금 어디쯤': 구간 번호, 섹션, 강연 전체에서의 위치(시간 비율)
+function whereNow() {
+  const a = chunks[ci].a;
+  const starts = sectionStarts();
+  let k = 0;
+  starts.forEach((st0, j) => { if (st0 <= a) k = j; });
+  const sec = (talk.sections || [])[k];
+  const total = S[S.length - 1].e - S[0].s;
+  return { n: ci + 1, of: chunks.length, unit: unit.label, pct: Math.round(((S[a].s - S[0].s) / total) * 100),
+    sec: sec ? `${k + 1}. ${sec.title}` : '', role: sec ? sec.role : '' };
 }
 function renderTalks() {
   const st = load();

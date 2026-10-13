@@ -239,4 +239,9 @@ body.hide-en .list:not(.reveal) .sent.on .signrun { background: none; box-shadow
 .icon-btn svg { width: 20px; height: 20px; stroke: var(--muted); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .sheet-row .toggle { min-width: 64px; }
 
+/* 목록: 어디까지 들었는지 (섹션 이름 + 강연 전체 위치 막대) */
+.talk-list button small { grid-column: 2 / 4; grid-row: 3; height: 4px; border-radius: 2px; background: var(--faint); overflow: hidden; margin-top: 4px; }
+.talk-list button small i { display: block; height: 100%; background: var(--c); }
+.talk-list button span.where { grid-column: 2 / 4; grid-row: 4; color: var(--fg); font-size: 12px; }
+
 @media (prefers-reduced-motion: reduce) { .sent { transition: none; } }
