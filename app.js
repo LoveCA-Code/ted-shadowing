@@ -252,10 +252,26 @@ const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>'
 
 function build() {
   const paras = new Set(talk.paragraphs);
+  const starts = sectionStarts();
   let html = '';
   S.forEach((x, i) => {
-    if (i && paras.has(i)) html += `<div class="para-gap" data-before="${i}"></div>`;
-    const words = x.t.trim().split(/\s+/).map((w, k) => `<span class="w" data-k="${k}">${esc(w)}</span>`).join(' ');
+    const k = starts.indexOf(i);
+    if (k >= 0) {   // F8 섹션 시작 띠
+      const sec = talk.sections[k];
+      html += `<div class="band" data-before="${i}" style="--c: var(${roleColor(sec.role)})"><span class="n">${k + 1}</span>`
+        + `<span class="role">${esc(sec.role)}</span><span class="title">${esc(sec.title)}</span></div>`;
+    } else if (i && paras.has(i)) html += `<div class="para-gap" data-before="${i}"></div>`;
+    // 연결 표현은 단어 사이 빈칸까지 이어지게 한 덩어리(.signrun)로 감싼다
+    const marks = signMarks(i);
+    const toks = x.t.trim().split(/\s+/);
+    let words = '';
+    toks.forEach((w, k) => {
+      const on = marks.sign.has(k);
+      if (k) words += on && marks.sign.has(k - 1) ? ' ' : (on ? ' ' : ' ');
+      if (on && !marks.sign.has(k - 1)) words += `${marks.tags[k] ? `<span class="tag">${esc(marks.tags[k])}</span>` : ''}<span class="signrun">`;
+      words += `<span class="w${on ? ' sign' : ''}" data-k="${k}">${esc(w)}</span>`;
+      if (on && !marks.sign.has(k + 1)) words += '</span>';
+    });
     html += `<button type="button" class="sent" data-i="${i}">${words}<span class="ko">${esc(x.ko || '')}</span></button>`;
   });
   list.innerHTML = html;
@@ -297,6 +313,59 @@ list.addEventListener('click', (ev) => {
   play(chunkOf(i));
 });
 list.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
+// ---------- F8 발표 구조 ----------
+const ROLE_COLOR = { '도입·문제 제기': '--r-intro', '핵심 주장': '--r-claim', '근거·설명': '--r-reason', '사례': '--r-case',
+  '반론 처리': '--r-counter', '정리·행동 촉구': '--r-close' };
+const roleColor = (role) => ROLE_COLOR[role] || '--accent';
+function sectionStarts() {
+  return (talk.sections || []).map((x) => talk.paragraphs[x.p]).filter((a) => a !== undefined);
+}
+// 문장 i의 연결 표현이 걸친 단어 번호들과, 표현 첫 단어 앞에 붙일 이름표
+function signMarks(i) {
+  const sign = new Set(), tags = {};
+  const t = S[i].t.trim(), starts = [];
+  t.replace(/\S+/g, (m, off) => { starts.push(off); return m; });
+  for (const sp of (talk.signposts || []).filter((x) => x.i === i)) {
+    const a = t.indexOf(sp.phrase);
+    if (a < 0) continue;
+    const b = a + sp.phrase.length;
+    let first = null;
+    starts.forEach((off, k) => {
+      const end = off + (t.slice(off).match(/^\S+/) || [''])[0].length;
+      if (off < b && end > a) { sign.add(k); if (first === null) first = k; }
+    });
+    if (first !== null) tags[first] = sp.function;
+  }
+  return { sign, tags };
+}
+function renderFlow() {
+  const starts = sectionStarts();
+  const end = (k) => (k + 1 < starts.length ? S[starts[k + 1] - 1].e : S[S.length - 1].e);
+  const total = S[S.length - 1].e - S[0].s;
+  const fmt = (x) => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, '0')}`;
+  let html = '<div class="map">' + talk.sections.map((sec, k) =>
+    `<i style="--c: var(${roleColor(sec.role)}); flex: ${Math.max(0.01, (end(k) - S[starts[k]].s) / total)}"></i>`).join('') + '</div>';
+  talk.sections.forEach((sec, k) => {
+    const a = starts[k], b = k + 1 < starts.length ? starts[k + 1] : S.length;
+    const sps = (talk.signposts || []).filter((x) => x.i >= a && x.i < b);
+    html += `<button type="button" class="sec" data-a="${a}" style="--c: var(${roleColor(sec.role)})">
+      <div class="head"><span class="n">${k + 1}</span><span class="role">${esc(sec.role)}</span><span class="when">${fmt(S[a].s)} · ${b - a}문장</span></div>
+      <h3>${esc(sec.title)}</h3><p>${esc(sec.summary)}</p>
+      <ul>${sps.map((x) => `<li><b>${esc(x.phrase)}</b><span>${esc(x.function)}</span></li>`).join('')}</ul></button>`;
+  });
+  $('flowList').innerHTML = html;
+}
+$('flowBtn').addEventListener('click', () => { renderFlow(); $('sheet').hidden = true; $('flow').hidden = false; });
+$('flowClose').addEventListener('click', () => { $('flow').hidden = true; });
+$('flowList').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.sec');
+  if (!b) return;
+  $('flow').hidden = true;
+  audio.pause(); video.pause(); target = null; clearTimeout(stopTimer);
+  ci = chunkOf(+b.dataset.a);   // 그 섹션 시작으로 이동 (재생은 하지 않음)
+  save(); mark();
+});
 
 // ---------- F6 단어장 ----------
 // 저장: { 기본형: { lex: 단어 뜻, memo, added, met: 만난 횟수, uses: { 형태: {mean, n} }, seen: { 날짜: [구간 키...] } } }

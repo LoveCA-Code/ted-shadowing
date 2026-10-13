@@ -49,7 +49,10 @@
   <div class="sheet-body">
     <p class="sheet-label">구간 단위</p>
     <div class="units" id="units"></div>
-    <button id="bookBtn" type="button" class="book-btn">단어장 (0개)</button>
+    <div class="sheet-btns">
+      <button id="bookBtn" type="button" class="book-btn">단어장 (0개)</button>
+      <button id="flowBtn" type="button" class="book-btn flow-btn">발표 구조</button>
+    </div>
     <div class="sheet-row">
       <div><b>영어 가리기</b><span>지금 구간의 영어를 막대로 가립니다. 누르면 보입니다.</span></div>
       <button id="hideT" type="button" class="toggle" aria-pressed="false">가리기</button>
@@ -60,6 +63,12 @@
 <!-- F6 뜻 창 -->
 <div class="sheet" id="wordSheet" hidden>
   <div class="sheet-body card" id="wordCard"></div>
+</div>
+
+<!-- F8 발표 구조 -->
+<div class="book" id="flow" hidden>
+  <div class="book-head"><b>발표 구조</b><button id="flowClose" type="button" class="toggle">닫기</button></div>
+  <div class="flow-list" id="flowList"></div>
 </div>
 
 <!-- F7 강연 목록 -->
