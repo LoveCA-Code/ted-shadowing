@@ -355,10 +355,10 @@ function openWord(i, k) {
   const here = w ? `<div class="sec"><span>이 문장에서</span><div class="here"><b>${esc(w.combo ? w.combo[1] : w.tok)}</b><div>${esc((w.combo ? w.combo[2] : w.mean) || '뜻 정보 없음')}</div></div></div>` : '';
   const uses = e && e.uses ? Object.entries(e.uses).sort((a, b) => b[1].n - a[1].n)
     .map(([u, v]) => `<li><span><b>${esc(u)}</b> — ${esc(v.mean || '')}</span><em>${v.n}번</em></li>`).join('') : '';
+  // 순서: 이 문장에서의 뜻(묶음이면 묶음) → 단어(기본형)와 단어 뜻 → 만난 쓰임 → 문장 → 메모
   $('wordCard').innerHTML = `
-    <h2>${esc(lemma)}</h2>
     ${here}
-    ${lex ? `<div class="sec"><span>단어 뜻</span><div class="mean">${esc(lex)}</div></div>` : ''}
+    <div class="sec"><h2>${esc(lemma)}</h2>${lex ? `<div class="mean">${esc(lex)}</div>` : ''}</div>
     ${uses ? `<div class="sec"><span>지금까지 만난 쓰임</span><ul class="uses">${uses}</ul></div>` : ''}
     ${w ? `<div class="ctx">${esc(S[i].t)}</div>` : ''}
     ${e ? `<label class="sec"><span>내 메모</span><textarea id="memo" rows="2" placeholder="눌러서 적기">${esc(e.memo || '')}</textarea></label>
