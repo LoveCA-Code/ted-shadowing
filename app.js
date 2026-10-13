@@ -408,7 +408,7 @@ function decorate() {
       for (const c of x.c || []) if (c[0].includes(k)) c[0].forEach((j) => ws[j] && ws[j].classList.add('saved'));
     });
   });
-  $('bookBtn').textContent = `단어장 (${Object.keys(book).length}개)`;
+  $('bookTitle').textContent = `단어장 (${Object.keys(book).length}개)`;
 }
 // 구간을 재생할 때 그 안의 저장 단어를 '만났다'고 센다 (같은 날 같은 구간은 1번)
 function countEncounters() {
@@ -501,7 +501,8 @@ function mark(instant) {
   gaps.forEach((g) => { const i = +g.dataset.before; if (i > c.a && i < c.b) g.classList.add('in'); });
   marked = c;
   list.classList.toggle('big', !!unit.big);
-  $('counter').textContent = `처음부터 듣기 · ${ci + 1} / ${chunks.length}`;
+  // 설정에 들어간 단위·가리기 상태는 큰 버튼에서 보이게
+  $('counter').textContent = `${unit.label}${hideEn ? ' · 가림' : ''} · ${ci + 1} / ${chunks.length}`;
   prepareWords();
   said = -1;
   speaking = c.a;
@@ -512,11 +513,13 @@ function mark(instant) {
 function applyToggles() {
   document.body.classList.toggle('no-ko', !showKo);
   $('koT').setAttribute('aria-pressed', String(showKo));
+  $('koT').textContent = showKo ? '켜짐' : '꺼짐';
   $('videoT').setAttribute('aria-pressed', String(showVideo));
+  $('videoT').textContent = showVideo ? '켜짐' : '꺼짐';
   $('videoBox').hidden = !showVideo;
   document.body.classList.toggle('hide-en', hideEn);
-  $('unitBtn').textContent = hideEn ? `${unit.label} · 가림` : unit.label;
   $('hideT').setAttribute('aria-pressed', String(hideEn));
+  $('hideT').textContent = hideEn ? '켜짐' : '꺼짐';
 }
 $('koT').addEventListener('click', () => { showKo = !showKo; applyToggles(); save(); mark(true); });
 $('videoT').addEventListener('click', async () => {
@@ -547,7 +550,7 @@ function setUnit(id) {
   ci = chunkOf(anchor);
   applyToggles(); save(); mark();
 }
-$('unitBtn').addEventListener('click', () => { renderUnits(); $('sheet').hidden = false; });
+$('setBtn').addEventListener('click', () => { renderUnits(); $('sheet').hidden = false; });
 $('units').addEventListener('click', (ev) => {
   const b = ev.target.closest('.unit');
   if (!b) return;
@@ -571,6 +574,7 @@ $('speedBtn').addEventListener('click', () => {
 });
 
 $('hideT').addEventListener('click', () => {
+  setTimeout(() => mark(true));
   hideEn = !hideEn;
   endPress();
   applyToggles(); save();

@@ -22,9 +22,11 @@
 <body>
 <header class="top">
   <button type="button" class="talk" id="talkInfo" aria-label="강연 목록 열기"><b id="talkTitle">불러오는 중…</b><span id="talkSub"></span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
-  <button id="unitBtn" type="button" class="toggle unit-btn" aria-label="구간 단위 바꾸기">문장</button>
-  <button id="videoT" type="button" class="toggle" aria-pressed="false">Video</button>
-  <button id="koT" type="button" class="toggle" aria-pressed="true">Translate</button>
+  <button id="bookBtn" type="button" class="toggle">단어장</button>
+  <button id="flowBtn" type="button" class="toggle flow-btn">발표 구조</button>
+  <button id="setBtn" type="button" class="icon-btn" aria-label="설정">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+  </button>
 </header>
 <div class="video" id="videoBox" hidden>
   <video id="video" playsinline webkit-playsinline preload="none"></video>
@@ -49,13 +51,17 @@
   <div class="sheet-body">
     <p class="sheet-label">구간 단위</p>
     <div class="units" id="units"></div>
-    <div class="sheet-btns">
-      <button id="bookBtn" type="button" class="book-btn">단어장 (0개)</button>
-      <button id="flowBtn" type="button" class="book-btn flow-btn">발표 구조</button>
+    <div class="sheet-row">
+      <div><b>Video</b><span>강연 영상을 위에 작게 보여 줍니다. 끄면 소리만 (화면 꺼도 재생).</span></div>
+      <button id="videoT" type="button" class="toggle" aria-pressed="false">켜기</button>
     </div>
     <div class="sheet-row">
-      <div><b>영어 가리기</b><span>지금 구간의 영어를 막대로 가립니다. 누르면 보입니다.</span></div>
-      <button id="hideT" type="button" class="toggle" aria-pressed="false">가리기</button>
+      <div><b>Translate</b><span>지금 구간 문장마다 한국어를 보여 줍니다.</span></div>
+      <button id="koT" type="button" class="toggle" aria-pressed="true">켜기</button>
+    </div>
+    <div class="sheet-row">
+      <div><b>영어 가리기</b><span>지금 구간의 영어를 막대로 가립니다. 누르고 있는 동안 보입니다.</span></div>
+      <button id="hideT" type="button" class="toggle" aria-pressed="false">켜기</button>
     </div>
   </div>
 </div>
@@ -79,7 +85,7 @@
 
 <!-- F6 단어장 화면 -->
 <div class="book" id="book" hidden>
-  <div class="book-head"><b>단어장</b><button id="bookClose" type="button" class="toggle">닫기</button></div>
+  <div class="book-head"><b id="bookTitle">단어장</b><button id="bookClose" type="button" class="toggle">닫기</button></div>
   <ul class="book-list" id="bookList"></ul>
 </div>
 
