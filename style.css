@@ -244,4 +244,6 @@ body.hide-en .list:not(.reveal) .sent.on .signrun { background: none; box-shadow
 .talk-list button small i { display: block; height: 100%; background: var(--c); }
 .talk-list button span.where { grid-column: 2 / 4; grid-row: 4; color: var(--fg); font-size: 12px; }
 
+.repeat-label { margin-top: 18px; }
+
 @media (prefers-reduced-motion: reduce) { .sent { transition: none; } }

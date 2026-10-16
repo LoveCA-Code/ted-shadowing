@@ -33,6 +33,10 @@ let unit = UNITS[0];
 let showKo = true;
 let showVideo = false;
 const RATES = [0.75, 0.85, 1];
+const REPEATS = [1, 2, 3, 5];   // F9 한 번 누르면 몇 번 들을지
+const REPEAT_GAP = 500;         // 반복 사이 쉼 (ms)
+const STOP_EARLY = 0.05;        // 구간 끝보다 조금 일찍 멈춤 (아이폰 멈춤 지연 대비, 끝은 쉼 안이라 들리는 차이 없음)
+let repeat = 1;
 let rate = 1;            // F5 재생 속도
 let hideEn = false;      // F4 영어 가리기 (듣기 모드)
 let peeking = false;    // 가린 구간을 누르고 있는 동안 영어를 보여 주는 중
@@ -51,6 +55,7 @@ function save() {
     st.showVideo = showVideo;
     st.hideEn = hideEn;
     st.rate = rate;
+    st.repeat = repeat;
     st.unit = unit.id;
     st.talk = talk && talk.id;
     // 위치는 구간 첫 문장 번호로 기억 (단위를 바꿔도 같은 곳에서 이어지게)
@@ -135,7 +140,7 @@ async function play(k) {
   (m === audio ? video : audio).pause();
   await attach(m, mediaUrl());
   const c = chunks[ci];
-  target = { s: S[c.a].s, e: S[c.b - 1].e, ci };
+  target = { s: S[c.a].s, e: S[c.b - 1].e, ci, rep: 1, reps: repeat };
   countEncounters();
   clearTimeout(stopTimer);
   setMetadata();
@@ -151,7 +156,26 @@ async function play(k) {
   m.muted = false;
   applyRate(m);           // 아이폰은 스트림을 새로 받으면 속도를 1로 되돌리는 경우가 있어 한 번 더
   if (!ok) { m.pause(); target = null; toast('구간으로 이동하지 못했습니다. 다시 눌러 주세요.'); return; }
+  showRep();
   watch();
+}
+// F9 반복: 구간 끝에서 멈추고 0.5초 쉰 뒤 처음부터 다시 (정한 횟수까지). 그 사이 다른 버튼을 누르면 취소
+async function again(m, mine) {
+  await new Promise((r) => setTimeout(r, REPEAT_GAP));
+  if (mine !== playId || !target) return;
+  target.waiting = false;
+  target.rep++;
+  showRep();
+  said = -1; speaking = -1;
+  wordEls.forEach((el) => el.classList.remove('said'));
+  m.currentTime = target.s;
+  try { await m.play(); } catch (e) { target = null; return; }
+  await arrive(m, target.s, mine);
+  if (mine === playId) watch();
+}
+function showRep() {
+  const base = `${unit.label}${hideEn ? ' · 가림' : ''} · ${ci + 1} / ${chunks.length}`;
+  $('counter').textContent = target && target.reps > 1 ? `${base} · ${target.rep}/${target.reps}회` : base;
 }
 let playId = 0;
 
@@ -174,15 +198,17 @@ async function arrive(m, t, mine) {
 // 구간 끝을 지키는 감시: 남은 시간의 절반씩 기다렸다 확인 (화면이 꺼져도 동작하도록 타이머 사용)
 function watch() {
   clearTimeout(stopTimer);
-  if (!target) return;
+  if (!target || target.waiting) return;   // 반복 사이 쉬는 중에는 감시하지 않음
   const m = media();
   if (m.seeking || m.currentTime < target.s - 0.25) { stopTimer = setTimeout(watch, 30); return; }
   const left = target.e - m.currentTime;
-  if (left <= 0.012) {
+  if (left <= STOP_EARLY) {
     m.pause();
     const end = target.e;
-    target = null;
     progress(end);
+    if (target.rep < target.reps) { target.waiting = true; again(m, playId); return; }
+    target = null;
+    showRep();
     return;
   }
   stopTimer = setTimeout(watch, Math.max(8, Math.min(250, (left * 1000) / 2 / (m.playbackRate || 1))));
@@ -538,6 +564,16 @@ $('prev').addEventListener('click', () => play(ci - 1));
 $('next').addEventListener('click', () => play(ci + 1));
 
 // ---------- 단위 고르기 ----------
+function renderRepeats() {
+  $('repeats').innerHTML = REPEATS.map((n) =>
+    `<button type="button" class="unit" data-n="${n}" aria-pressed="${n === repeat}">${n}번</button>`).join('');
+}
+$('repeats').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-n]');
+  if (!b) return;
+  repeat = +b.dataset.n;
+  renderRepeats(); save(); showRep();
+});
 function renderUnits() {
   $('units').innerHTML = UNITS.map((u) =>
     `<button type="button" class="unit" data-id="${u.id}" aria-pressed="${u.id === unit.id}">${u.label}</button>`).join('');
@@ -550,7 +586,7 @@ function setUnit(id) {
   ci = chunkOf(anchor);
   applyToggles(); save(); mark();
 }
-$('setBtn').addEventListener('click', () => { renderUnits(); $('sheet').hidden = false; });
+$('setBtn').addEventListener('click', () => { renderUnits(); renderRepeats(); $('sheet').hidden = false; });
 $('units').addEventListener('click', (ev) => {
   const b = ev.target.closest('.unit');
   if (!b) return;
@@ -688,6 +724,7 @@ async function start() {
   showVideo = st.showVideo === true;
   hideEn = st.hideEn === true;
   rate = RATES.includes(st.rate) ? st.rate : 1;
+  repeat = REPEATS.includes(st.repeat) ? st.repeat : 1;
   showRate();
   applyRate();
   unit = UNITS.find((u) => u.id === st.unit) || UNITS[0];

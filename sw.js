@@ -2,7 +2,7 @@
 // → 브라우저가 바뀐 sw.js를 발견해 최신 파일을 새로 받고, 페이지가 한 번 새로고침된다.
 // 강연 데이터(talks/)는 매번 서버에서 확인하고, 인터넷이 안 되면 저장본을 쓴다.
 // 소리·영상 재생은 TED 서버에서 하므로 인터넷이 필요하다.
-const CACHE = 'shadowing-v24';
+const CACHE = 'shadowing-v25';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
